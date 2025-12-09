@@ -32,41 +32,112 @@ PostgreSQL (Data Warehouse)
 
 - Docker 24+ and Docker Compose 2.23+
 - Python 3.11+ (for reconciliation scripts)
-- 8GB RAM, 20GB disk space
+- 8GB RAM minimum (16GB recommended), 20GB disk space
+- Optional but recommended: `curl`, `jq`, `psql`, `cqlsh`
 
-### 5-Minute Setup
+### 5-Minute Local Setup
 
 ```bash
 # 1. Clone and navigate
 git clone <repository-url>
 cd scylla-pg-cdc
 
-# 2. Copy environment template
-cp .env.example .env
-
-# 3. Start all services
-docker-compose up -d
-
-# 4. Wait for services (2-3 minutes)
-./scripts/health-check.sh --wait
-
-# 5. Deploy example connector
-./scripts/deploy-connector.sh --template examples/users-table
+# 2. Run automated setup script (handles all initialization)
+./scripts/setup-local.sh
 ```
 
-### Verify Replication
+The setup script will:
+- ✓ Check prerequisites (Docker, Docker Compose, disk space)
+- ✓ Create `.env` file from template
+- ✓ Pull and build Docker images
+- ✓ Start all services (Kafka, ScyllaDB, PostgreSQL, etc.)
+- ✓ Initialize Vault with development secrets
+- ✓ Wait for services to become healthy
+
+This takes approximately 2-3 minutes. Services will start in the correct order with automatic health checks.
+
+### Verify Services
 
 ```bash
-# Insert test data in ScyllaDB
+# Check all services are healthy
+./scripts/health-check.sh
+
+# Check specific service (verbose mode)
+./scripts/health-check.sh --verbose --service postgres
+
+# Monitor connector status
+./scripts/monitor-connectors.sh
+```
+
+### Verify Test Data Replication
+
+The setup includes sample test data that's automatically loaded. To verify the CDC pipeline:
+
+```bash
+# 1. Check ScyllaDB has test data (5 users, 5 products, 3 orders)
 docker exec -it scylla cqlsh -e "
-  INSERT INTO ecommerce.users (user_id, email, name)
-  VALUES (1, 'alice@example.com', 'Alice Smith');
+  SELECT COUNT(*) FROM app_data.users;
+  SELECT COUNT(*) FROM app_data.products;
+  SELECT COUNT(*) FROM app_data.orders;
 "
 
-# Check Postgres received the data (~5 seconds)
+# 2. Deploy CDC connectors
+./scripts/deploy-connectors.sh
+
+# 3. Wait 30 seconds for initial replication
+
+# 4. Verify data arrived in PostgreSQL
 docker exec -it postgres psql -U postgres -d warehouse -c "
-  SELECT * FROM ecommerce.users WHERE user_id = 1;
+  SELECT * FROM cdc_data.validation_summary ORDER BY category, status;
 "
+
+# Check replication completeness
+docker exec -it postgres psql -U postgres -d warehouse -c "
+  SELECT cdc_data.get_replication_completeness() || '%' AS completeness;
+  SELECT cdc_data.is_replication_complete() AS all_checks_passed;
+"
+```
+
+### Test Live Replication
+
+```bash
+# Insert a new user in ScyllaDB
+docker exec -it scylla cqlsh -e "
+  USE app_data;
+  INSERT INTO users (user_id, username, email, first_name, last_name, created_at, updated_at, status)
+  VALUES (uuid(), 'test_user', 'test@example.com', 'Test', 'User', toTimestamp(now()), toTimestamp(now()), 'active');
+"
+
+# Check PostgreSQL received it (~5 seconds)
+docker exec -it postgres psql -U postgres -d warehouse -c "
+  SELECT username, email, first_name, last_name, status
+  FROM cdc_data.users
+  WHERE email = 'test@example.com';
+"
+
+# Update the user in ScyllaDB
+docker exec -it scylla cqlsh -e "
+  USE app_data;
+  UPDATE users SET status = 'inactive', updated_at = toTimestamp(now())
+  WHERE email = 'test@example.com';
+"
+
+# Verify update replicated to PostgreSQL
+docker exec -it postgres psql -U postgres -d warehouse -c "
+  SELECT username, email, status, cdc_timestamp
+  FROM cdc_data.users
+  WHERE email = 'test@example.com';
+"
+```
+
+### Teardown
+
+```bash
+# Stop all services and clean up
+./scripts/teardown-local.sh
+
+# Or manually with Docker Compose
+docker compose -f docker/docker-compose.yml down -v
 ```
 
 ## Service URLs

@@ -287,3 +287,245 @@ BEGIN
         RAISE NOTICE 'Table: % (Size: %)', r.table_name, r.size;
     END LOOP;
 END $$;
+
+-- ============================================================================
+-- Expected Results for Validation (After CDC Replication)
+-- ============================================================================
+-- These queries can be used to verify that CDC replication is working correctly
+-- After the pipeline is running, the replicated data from ScyllaDB should match these expectations
+
+-- Expected User Counts by Status
+-- After replication: Should have 4 active users and 1 inactive user
+CREATE OR REPLACE VIEW cdc_data.expected_user_count_by_status AS
+SELECT
+    'active' AS status,
+    4 AS expected_count,
+    'Should have 4 active users (john_doe, jane_smith, bob_wilson, charlie_brown)' AS description
+UNION ALL
+SELECT
+    'inactive' AS status,
+    1 AS expected_count,
+    'Should have 1 inactive user (alice_jones)' AS description;
+
+-- Validation Query: Check actual vs expected user counts by status
+CREATE OR REPLACE VIEW cdc_data.validate_user_counts AS
+SELECT
+    e.status,
+    e.expected_count,
+    COALESCE(a.actual_count, 0) AS actual_count,
+    CASE
+        WHEN COALESCE(a.actual_count, 0) = e.expected_count THEN 'PASS'
+        ELSE 'FAIL'
+    END AS validation_status,
+    e.description
+FROM cdc_data.expected_user_count_by_status e
+LEFT JOIN (
+    SELECT status, COUNT(*) AS actual_count
+    FROM cdc_data.users
+    GROUP BY status
+) a ON e.status = a.status;
+
+-- Expected Product Counts
+-- After replication: Should have 5 products total
+CREATE OR REPLACE VIEW cdc_data.expected_product_metrics AS
+SELECT
+    'total_products' AS metric,
+    5 AS expected_value,
+    'Should have 5 products replicated from ScyllaDB' AS description
+UNION ALL
+SELECT
+    'active_products' AS metric,
+    5 AS expected_value,
+    'All 5 products should be active' AS description
+UNION ALL
+SELECT
+    'total_stock' AS metric,
+    455 AS expected_value,
+    'Total stock quantity across all products (50+200+75+30+100)' AS description;
+
+-- Validation Query: Check actual vs expected product metrics
+CREATE OR REPLACE VIEW cdc_data.validate_product_metrics AS
+SELECT
+    e.metric,
+    e.expected_value,
+    CASE e.metric
+        WHEN 'total_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products)
+        WHEN 'active_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products WHERE is_active = true)
+        WHEN 'total_stock' THEN (SELECT SUM(stock_quantity)::INTEGER FROM cdc_data.products)
+        ELSE 0
+    END AS actual_value,
+    CASE
+        WHEN CASE e.metric
+            WHEN 'total_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products)
+            WHEN 'active_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products WHERE is_active = true)
+            WHEN 'total_stock' THEN (SELECT SUM(stock_quantity)::INTEGER FROM cdc_data.products)
+            ELSE 0
+        END = e.expected_value THEN 'PASS'
+        ELSE 'FAIL'
+    END AS validation_status,
+    e.description
+FROM cdc_data.expected_product_metrics e;
+
+-- Expected Order Metrics
+-- After replication: Should have 3 orders with specific totals
+CREATE OR REPLACE VIEW cdc_data.expected_order_metrics AS
+SELECT
+    'total_orders' AS metric,
+    3 AS expected_value,
+    'Should have 3 orders replicated' AS description
+UNION ALL
+SELECT
+    'total_revenue' AS metric,
+    2029.93 AS expected_value,
+    'Total revenue from all orders (1329.98 + 119.98 + 579.97)' AS description
+UNION ALL
+SELECT
+    'avg_order_value' AS metric,
+    676.64 AS expected_value,
+    'Average order value (rounded to 2 decimals)' AS description;
+
+-- Validation Query: Check actual vs expected order metrics
+CREATE OR REPLACE VIEW cdc_data.validate_order_metrics AS
+SELECT
+    e.metric,
+    e.expected_value,
+    CASE e.metric
+        WHEN 'total_orders' THEN (SELECT COUNT(*)::NUMERIC FROM cdc_data.orders)
+        WHEN 'total_revenue' THEN (SELECT ROUND(SUM(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
+        WHEN 'avg_order_value' THEN (SELECT ROUND(AVG(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
+        ELSE 0
+    END AS actual_value,
+    CASE
+        WHEN ABS(
+            CASE e.metric
+                WHEN 'total_orders' THEN (SELECT COUNT(*)::NUMERIC FROM cdc_data.orders)
+                WHEN 'total_revenue' THEN (SELECT ROUND(SUM(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
+                WHEN 'avg_order_value' THEN (SELECT ROUND(AVG(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
+                ELSE 0
+            END - e.expected_value
+        ) < 0.01 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS validation_status,
+    e.description
+FROM cdc_data.expected_order_metrics e;
+
+-- Expected Order Items Count
+-- After replication: Should have 6 order items
+CREATE OR REPLACE VIEW cdc_data.expected_order_item_metrics AS
+SELECT
+    'total_order_items' AS metric,
+    6 AS expected_value,
+    'Should have 6 order items replicated' AS description;
+
+-- Validation Query: Check actual vs expected order item counts
+CREATE OR REPLACE VIEW cdc_data.validate_order_item_metrics AS
+SELECT
+    e.metric,
+    e.expected_value,
+    (SELECT COUNT(*)::INTEGER FROM cdc_data.order_items) AS actual_value,
+    CASE
+        WHEN (SELECT COUNT(*)::INTEGER FROM cdc_data.order_items) = e.expected_value THEN 'PASS'
+        ELSE 'FAIL'
+    END AS validation_status,
+    e.description
+FROM cdc_data.expected_order_item_metrics e;
+
+-- Expected Inventory Transactions
+-- After replication: Should have 3 inventory transactions
+CREATE OR REPLACE VIEW cdc_data.expected_inventory_metrics AS
+SELECT
+    'total_transactions' AS metric,
+    3 AS expected_value,
+    'Should have 3 inventory transactions replicated' AS description;
+
+-- Validation Query: Check actual vs expected inventory transaction counts
+CREATE OR REPLACE VIEW cdc_data.validate_inventory_metrics AS
+SELECT
+    e.metric,
+    e.expected_value,
+    (SELECT COUNT(*)::INTEGER FROM cdc_data.inventory_transactions) AS actual_value,
+    CASE
+        WHEN (SELECT COUNT(*)::INTEGER FROM cdc_data.inventory_transactions) = e.expected_value THEN 'PASS'
+        ELSE 'FAIL'
+    END AS validation_status,
+    e.description
+FROM cdc_data.expected_inventory_metrics e;
+
+-- Master Validation View: All Validations in One Place
+CREATE OR REPLACE VIEW cdc_data.validation_summary AS
+SELECT 'Users' AS category, * FROM cdc_data.validate_user_counts
+UNION ALL
+SELECT 'Products' AS category, metric, expected_value::TEXT, actual_value::TEXT, validation_status, description FROM cdc_data.validate_product_metrics
+UNION ALL
+SELECT 'Orders' AS category, metric, expected_value::TEXT, actual_value::TEXT, validation_status, description FROM cdc_data.validate_order_metrics
+UNION ALL
+SELECT 'Order Items' AS category, metric, expected_value::TEXT, actual_value::TEXT, validation_status, description FROM cdc_data.validate_order_item_metrics
+UNION ALL
+SELECT 'Inventory' AS category, metric, expected_value::TEXT, actual_value::TEXT, validation_status, description FROM cdc_data.validate_inventory_metrics;
+
+-- ============================================================================
+-- Validation Helper Functions
+-- ============================================================================
+
+-- Function to run all validations and return summary
+CREATE OR REPLACE FUNCTION cdc_data.run_validation_checks()
+RETURNS TABLE (
+    category VARCHAR,
+    check_name VARCHAR,
+    expected VARCHAR,
+    actual VARCHAR,
+    status VARCHAR,
+    details TEXT
+) AS $$
+BEGIN
+    RETURN QUERY SELECT * FROM cdc_data.validation_summary;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to check if CDC replication is complete (all validations pass)
+CREATE OR REPLACE FUNCTION cdc_data.is_replication_complete()
+RETURNS BOOLEAN AS $$
+DECLARE
+    failed_count INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO failed_count
+    FROM cdc_data.validation_summary
+    WHERE validation_status = 'FAIL';
+
+    RETURN failed_count = 0;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get replication completeness percentage
+CREATE OR REPLACE FUNCTION cdc_data.get_replication_completeness()
+RETURNS NUMERIC AS $$
+DECLARE
+    total_checks INTEGER;
+    passed_checks INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO total_checks FROM cdc_data.validation_summary;
+    SELECT COUNT(*) INTO passed_checks FROM cdc_data.validation_summary WHERE validation_status = 'PASS';
+
+    IF total_checks = 0 THEN
+        RETURN 0;
+    END IF;
+
+    RETURN ROUND((passed_checks::NUMERIC / total_checks::NUMERIC) * 100, 2);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- Quick Validation Commands (for manual testing)
+-- ============================================================================
+
+-- To check all validations at once:
+-- SELECT * FROM cdc_data.validation_summary ORDER BY category, status, description;
+
+-- To check if replication is complete:
+-- SELECT cdc_data.is_replication_complete() AS all_checks_passed;
+
+-- To check replication completeness percentage:
+-- SELECT cdc_data.get_replication_completeness() || '%' AS completeness;
+
+-- To run validation checks as a function:
+-- SELECT * FROM cdc_data.run_validation_checks() ORDER BY category, status;

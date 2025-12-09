@@ -110,12 +110,12 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 ### Implementation for User Story 5
 
-- [ ] T035 [US5] Create scripts/setup-local.sh to initialize Docker environment and verify prerequisites
-- [ ] T036 [US5] Create scripts/health-check.sh to verify all service health endpoints
-- [ ] T037 [US5] Add test data fixtures in docker/scylla/init.cql for sample ecommerce.users table
-- [ ] T038 [US5] Add expected results in docker/postgres/init.sql for validation queries
-- [ ] T039 [US5] Update README.md with quick start instructions from quickstart.md
-- [ ] T040 [US5] Create scripts/teardown-local.sh to clean up Docker environment
+- [x] T035 [US5] Create scripts/setup-local.sh to initialize Docker environment and verify prerequisites
+- [x] T036 [US5] Create scripts/health-check.sh to verify all service health endpoints
+- [x] T037 [US5] Add test data fixtures in docker/scylla/init.cql for sample ecommerce.users table
+- [x] T038 [US5] Add expected results in docker/postgres/init.sql for validation queries
+- [x] T039 [US5] Update README.md with quick start instructions from quickstart.md
+- [x] T040 [US5] Create scripts/teardown-local.sh to clean up Docker environment
 
 **Checkpoint**: At this point, local development environment is fully functional. Developers can start/stop pipeline locally.
 
