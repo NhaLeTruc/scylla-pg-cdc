@@ -1,0 +1,25 @@
+# Core dependencies
+cassandra-driver>=3.28.0  # ScyllaDB/Cassandra Python driver
+psycopg2-binary>=2.9.9    # PostgreSQL adapter
+hvac>=2.1.0               # HashiCorp Vault client
+
+# Kafka ecosystem
+confluent-kafka>=2.3.0    # Kafka Python client
+avro-python3>=1.11.3      # Avro serialization
+
+# Monitoring and observability
+prometheus-client>=0.19.0 # Prometheus metrics
+opentelemetry-api>=1.21.0 # Distributed tracing
+opentelemetry-sdk>=1.21.0
+
+# Utilities
+python-dotenv>=1.0.0      # Environment variable management
+pyyaml>=6.0.1             # YAML configuration parsing
+requests>=2.31.0          # HTTP requests for REST APIs
+
+# Testing (dev dependencies)
+pytest>=7.4.3
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-asyncio>=0.21.1
+testcontainers>=3.7.1     # Integration test isolation

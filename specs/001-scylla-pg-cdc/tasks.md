@@ -34,10 +34,10 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create root directory structure (docker/, scripts/, src/, tests/, configs/, docs/)
-- [ ] T002 Create Python project files (requirements.txt, pytest.ini, .gitignore, README.md)
-- [ ] T003 [P] Create .env.example file with environment variable templates per quickstart.md
-- [ ] T004 [P] Create docker/.dockerignore file
+- [x] T001 Create root directory structure (docker/, scripts/, src/, tests/, configs/, docs/)
+- [x] T002 Create Python project files (requirements.txt, pytest.ini, .gitignore, README.md)
+- [x] T003 [P] Create .env.example file with environment variable templates per quickstart.md
+- [x] T004 [P] Create docker/.dockerignore file
 
 ---
 
