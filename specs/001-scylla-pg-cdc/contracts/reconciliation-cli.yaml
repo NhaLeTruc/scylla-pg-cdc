@@ -1,0 +1,535 @@
+openapi: 3.0.3
+info:
+  title: Reconciliation Script CLI Contract
+  description: |
+    Command-line interface contract for the reconciliation script (`scripts/reconcile.py`).
+    Defines all command options, arguments, expected behaviors, and exit codes.
+
+    This is not an HTTP API - it's a CLI tool specification for contract testing and documentation.
+  version: 1.0.0
+
+tags:
+  - name: commands
+    description: CLI commands and subcommands
+
+components:
+  schemas:
+    ReconciliationMode:
+      type: string
+      enum:
+        - full
+        - incremental
+        - verify-only
+      description: |
+        - `full`: Compare all rows in table
+        - `incremental`: Compare only rows modified since timestamp
+        - `verify-only`: Check for discrepancies without repairing
+
+    DiscrepancyType:
+      type: string
+      enum:
+        - missing
+        - mismatch
+        - extra
+
+    ExitCodes:
+      type: object
+      properties:
+        SUCCESS:
+          type: integer
+          const: 0
+          description: Reconciliation completed without discrepancies
+        DISCREPANCIES_FOUND:
+          type: integer
+          const: 1
+          description: Discrepancies found but repairs succeeded
+        REPAIR_FAILED:
+          type: integer
+          const: 2
+          description: One or more repairs failed
+        CONFIG_ERROR:
+          type: integer
+          const: 10
+          description: Invalid configuration or arguments
+        CONNECTION_ERROR:
+          type: integer
+          const: 11
+          description: Failed to connect to ScyllaDB or Postgres
+        INTERRUPTED:
+          type: integer
+          const: 130
+          description: Process interrupted by user (SIGINT)
+
+paths:
+  /cli/reconcile:
+    post:
+      summary: Execute reconciliation
+      tags: [commands]
+      description: |
+        Main reconciliation command. Compares ScyllaDB source with Postgres sink
+        and optionally repairs discrepancies.
+
+        **Usage**:
+        ```bash
+        ./scripts/reconcile.py --table KEYSPACE.TABLE [OPTIONS]
+        ```
+
+        **Examples**:
+        ```bash
+        # Full reconciliation with repair
+        ./scripts/reconcile.py --table ecommerce.users --mode full --repair
+
+        # Incremental reconciliation since yesterday
+        ./scripts/reconcile.py --table ecommerce.orders --mode incremental --since "2025-12-08" --repair
+
+        # Verify only (no repairs)
+        ./scripts/reconcile.py --table analytics.events --mode verify-only
+
+        # Scheduled reconciliation (cron-friendly output)
+        ./scripts/reconcile.py --table ecommerce.users --mode full --repair --quiet --log-json
+        ```
+
+      parameters:
+        - name: --table
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$'
+            example: "ecommerce.users"
+          description: Fully qualified table name (keyspace.table)
+
+        - name: --mode
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ReconciliationMode'
+            default: full
+          description: Reconciliation mode
+
+        - name: --since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-12-08T00:00:00Z"
+          description: For incremental mode, compare only rows modified after this timestamp
+
+        - name: --repair
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Automatically repair discovered discrepancies
+
+        - name: --batch-size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10000
+            minimum: 100
+            maximum: 100000
+          description: Number of rows to process per batch
+
+        - name: --checkpoint-interval
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10000
+            minimum: 1000
+          description: Update checkpoint every N rows
+
+        - name: --max-discrepancies
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: -1
+            minimum: -1
+          description: Stop after finding N discrepancies (-1 for unlimited)
+
+        - name: --quiet
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Suppress non-error output (for cron jobs)
+
+        - name: --log-json
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Output structured JSON logs instead of human-readable
+
+        - name: --dry-run
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Simulate repairs without executing (implies --repair)
+
+        - name: --resume
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Resume from last checkpoint if previous run was interrupted
+
+        - name: --correlation-id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Custom correlation ID for tracing (generated if not provided)
+
+      responses:
+        '0':
+          description: Success - no discrepancies found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: "success"
+                  table_name:
+                    type: string
+                  mode:
+                    $ref: '#/components/schemas/ReconciliationMode'
+                  rows_checked:
+                    type: integer
+                  discrepancies_found:
+                    type: integer
+                    const: 0
+                  duration_seconds:
+                    type: number
+                  correlation_id:
+                    type: string
+                    format: uuid
+              example:
+                status: "success"
+                table_name: "ecommerce.users"
+                mode: "full"
+                rows_checked: 1500000
+                discrepancies_found: 0
+                duration_seconds: 45.3
+                correlation_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
+        '1':
+          description: Discrepancies found and repaired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: "discrepancies_repaired"
+                  table_name:
+                    type: string
+                  rows_checked:
+                    type: integer
+                  discrepancies:
+                    type: object
+                    properties:
+                      missing:
+                        type: integer
+                      mismatch:
+                        type: integer
+                      extra:
+                        type: integer
+                  repairs:
+                    type: object
+                    properties:
+                      attempted:
+                        type: integer
+                      succeeded:
+                        type: integer
+                      failed:
+                        type: integer
+                  duration_seconds:
+                    type: number
+                  correlation_id:
+                    type: string
+              example:
+                status: "discrepancies_repaired"
+                table_name: "ecommerce.users"
+                rows_checked: 1500000
+                discrepancies:
+                  missing: 15
+                  mismatch: 3
+                  extra: 0
+                repairs:
+                  attempted: 18
+                  succeeded: 18
+                  failed: 0
+                duration_seconds: 52.1
+                correlation_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
+        '2':
+          description: Repair failures occurred
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: "repair_failed"
+                  table_name:
+                    type: string
+                  repairs:
+                    type: object
+                    properties:
+                      attempted:
+                        type: integer
+                      succeeded:
+                        type: integer
+                      failed:
+                        type: integer
+                  failed_repairs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        primary_key:
+                          type: object
+                        error:
+                          type: string
+                  correlation_id:
+                    type: string
+
+        '10':
+          description: Configuration error
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                missing_table:
+                  value: "Error: --table argument is required"
+                invalid_mode:
+                  value: "Error: Invalid mode 'partial'. Must be one of: full, incremental, verify-only"
+                missing_since:
+                  value: "Error: --since required for incremental mode"
+
+        '11':
+          description: Connection error
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                scylla_down:
+                  value: "Error: Failed to connect to ScyllaDB at scylla:9042: Connection refused"
+                postgres_down:
+                  value: "Error: Failed to connect to Postgres at postgres:5432: Connection timeout"
+                vault_unavailable:
+                  value: "Error: Failed to retrieve credentials from Vault: Service unavailable"
+
+  /cli/reconcile/status:
+    get:
+      summary: Check reconciliation status
+      tags: [commands]
+      description: |
+        Query status of running or completed reconciliations.
+
+        **Usage**:
+        ```bash
+        ./scripts/reconcile.py status [OPTIONS]
+        ```
+
+        **Examples**:
+        ```bash
+        # Check all active reconciliations
+        ./scripts/reconcile.py status
+
+        # Check specific table
+        ./scripts/reconcile.py status --table ecommerce.users
+
+        # Check with JSON output
+        ./scripts/reconcile.py status --log-json
+        ```
+
+      parameters:
+        - name: --table
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by table name (shows all if omitted)
+
+        - name: --log-json
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+
+      responses:
+        '0':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    table_name:
+                      type: string
+                    status:
+                      type: string
+                      enum: [running, completed, failed]
+                    started_at:
+                      type: string
+                      format: date-time
+                    completed_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    rows_checked:
+                      type: integer
+                    discrepancies_found:
+                      type: integer
+                    last_checkpoint_key:
+                      type: string
+              example:
+                - table_name: "ecommerce.users"
+                  status: "running"
+                  started_at: "2025-12-09T10:00:00Z"
+                  completed_at: null
+                  rows_checked: 750000
+                  discrepancies_found: 5
+                  last_checkpoint_key: "{\"user_id\": 500000}"
+                - table_name: "ecommerce.orders"
+                  status: "completed"
+                  started_at: "2025-12-09T08:00:00Z"
+                  completed_at: "2025-12-09T09:15:00Z"
+                  rows_checked: 2500000
+                  discrepancies_found: 0
+                  last_checkpoint_key: null
+
+  /cli/reconcile/report:
+    get:
+      summary: Generate reconciliation report
+      tags: [commands]
+      description: |
+        Generate summary report of recent reconciliations.
+
+        **Usage**:
+        ```bash
+        ./scripts/reconcile.py report [OPTIONS]
+        ```
+
+        **Examples**:
+        ```bash
+        # Last 7 days report
+        ./scripts/reconcile.py report --days 7
+
+        # Specific table report
+        ./scripts/reconcile.py report --table ecommerce.users --days 30
+
+        # CSV output for analysis
+        ./scripts/reconcile.py report --format csv --output /tmp/reconciliation-report.csv
+        ```
+
+      parameters:
+        - name: --days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 7
+            minimum: 1
+            maximum: 365
+          description: Include reconciliations from last N days
+
+        - name: --table
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by table name
+
+        - name: --format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [text, json, csv]
+            default: text
+
+        - name: --output
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Write report to file instead of stdout
+
+      responses:
+        '0':
+          description: Report generated successfully
+          content:
+            text/plain:
+              example: |
+                Reconciliation Report (Last 7 Days)
+                ====================================
+
+                Table: ecommerce.users
+                  Total Runs: 7
+                  Success Rate: 85.7% (6/7)
+                  Avg Rows Checked: 1,500,000
+                  Total Discrepancies: 42 (missing: 30, mismatch: 12, extra: 0)
+                  Avg Duration: 48.2 seconds
+
+                Table: ecommerce.orders
+                  Total Runs: 7
+                  Success Rate: 100.0% (7/7)
+                  Avg Rows Checked: 2,800,000
+                  Total Discrepancies: 0
+                  Avg Duration: 95.5 seconds
+
+externalDocs:
+  description: Full reconciliation documentation
+  url: /docs/runbook.md#reconciliation
+
+x-cli-metadata:
+  script_path: scripts/reconcile.py
+  language: python
+  minimum_version: "3.11"
+  dependencies:
+    - cassandra-driver>=3.28
+    - psycopg2-binary>=2.9
+    - hvac>=1.2  # HashiCorp Vault client
+    - prometheus-client>=0.19
+  environment_variables:
+    - name: SCYLLA_HOSTS
+      required: false
+      default: "localhost"
+      description: Comma-separated list of ScyllaDB hosts
+    - name: POSTGRES_HOST
+      required: false
+      default: "localhost"
+      description: Postgres host
+    - name: VAULT_ADDR
+      required: true
+      description: Vault server address (e.g., http://vault:8200)
+    - name: VAULT_TOKEN
+      required: true
+      description: Vault authentication token
+    - name: LOG_LEVEL
+      required: false
+      default: "INFO"
+      description: Logging level (DEBUG, INFO, WARNING, ERROR)

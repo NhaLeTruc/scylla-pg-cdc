@@ -1,0 +1,439 @@
+openapi: 3.0.3
+info:
+  title: Kafka Connect REST API
+  description: |
+    REST API contract for managing Kafka Connect connectors. This API is exposed by Kafka Connect workers
+    and used by management scripts (deploy-connector.sh, health-check.sh) to deploy, monitor, and control
+    CDC pipeline connectors.
+
+    Note: This is the standard Kafka Connect API, not a custom implementation. Documented here for
+    reference and contract testing.
+  version: 3.6.1
+  contact:
+    name: CDC Pipeline Team
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8083
+    description: Local development environment
+  - url: http://kafka-connect:8083
+    description: Docker Compose internal network
+  - url: https://kafka-connect.production.example.com
+    description: Production environment
+
+tags:
+  - name: connectors
+    description: Connector lifecycle management
+  - name: health
+    description: Health and status endpoints
+
+paths:
+  /connectors:
+    get:
+      summary: List all connectors
+      tags: [connectors]
+      description: Returns list of active connector names
+      responses:
+        '200':
+          description: List of connector names
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["scylla-source-users", "postgres-sink-users"]
+
+    post:
+      summary: Create a new connector
+      tags: [connectors]
+      description: Deploy a new connector with specified configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorConfig'
+            examples:
+              scylla-source:
+                $ref: '#/components/examples/ScyllaSourceConfig'
+              postgres-sink:
+                $ref: '#/components/examples/PostgresSinkConfig'
+      responses:
+        '201':
+          description: Connector created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInfo'
+        '409':
+          description: Connector with same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /connectors/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        example: scylla-source-users
+
+    get:
+      summary: Get connector details
+      tags: [connectors]
+      responses:
+        '200':
+          description: Connector information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInfo'
+        '404':
+          description: Connector not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update connector configuration
+      tags: [connectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorConfig'
+      responses:
+        '200':
+          description: Connector updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInfo'
+        '404':
+          description: Connector not found
+
+    delete:
+      summary: Delete a connector
+      tags: [connectors]
+      responses:
+        '204':
+          description: Connector deleted successfully
+        '404':
+          description: Connector not found
+
+  /connectors/{name}/status:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get connector status
+      tags: [connectors]
+      description: Returns connector and task status, used for health monitoring
+      responses:
+        '200':
+          description: Connector status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorStatus'
+              examples:
+                running:
+                  $ref: '#/components/examples/ConnectorStatusRunning'
+                failed:
+                  $ref: '#/components/examples/ConnectorStatusFailed'
+
+  /connectors/{name}/pause:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      summary: Pause a connector
+      tags: [connectors]
+      description: Temporarily stop connector without deleting it
+      responses:
+        '202':
+          description: Connector pause initiated
+        '404':
+          description: Connector not found
+
+  /connectors/{name}/resume:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      summary: Resume a paused connector
+      tags: [connectors]
+      description: Restart a paused connector
+      responses:
+        '202':
+          description: Connector resume initiated
+        '404':
+          description: Connector not found
+
+  /connectors/{name}/restart:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+
+    post:
+      summary: Restart a connector
+      tags: [connectors]
+      description: Stop and start connector (useful for applying config changes or recovering from failures)
+      responses:
+        '204':
+          description: Connector restart initiated
+        '404':
+          description: Connector not found
+
+  /connectors/{name}/tasks/{taskId}/restart:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    post:
+      summary: Restart a specific task
+      tags: [connectors]
+      description: Restart individual task without restarting entire connector
+      responses:
+        '204':
+          description: Task restart initiated
+        '404':
+          description: Connector or task not found
+
+  /:
+    get:
+      summary: Get Connect cluster info
+      tags: [health]
+      description: Returns Kafka Connect cluster version and identification
+      responses:
+        '200':
+          description: Cluster information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "3.6.1"
+                  commit:
+                    type: string
+                    example: "5e3c2b738d253ff5"
+                  kafka_cluster_id:
+                    type: string
+                    example: "lkc-abc123"
+
+  /connector-plugins:
+    get:
+      summary: List available connector plugins
+      tags: [health]
+      description: Returns list of installed connector classes
+      responses:
+        '200':
+          description: List of connector plugins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    class:
+                      type: string
+                    type:
+                      type: string
+                      enum: [source, sink]
+                    version:
+                      type: string
+                example:
+                  - class: "com.scylladb.cdc.kafka.connect.ScyllaSourceConnector"
+                    type: "source"
+                    version: "1.2.0"
+                  - class: "io.confluent.connect.jdbc.JdbcSinkConnector"
+                    type: "sink"
+                    version: "10.7.4"
+
+components:
+  schemas:
+    ConnectorConfig:
+      type: object
+      required:
+        - name
+        - config
+      properties:
+        name:
+          type: string
+          description: Unique connector name
+          example: "scylla-source-users"
+        config:
+          type: object
+          description: Connector-specific configuration properties
+          additionalProperties: true
+
+    ConnectorInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              connector:
+                type: string
+              task:
+                type: integer
+        type:
+          type: string
+          enum: [source, sink]
+
+    ConnectorStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        connector:
+          type: object
+          properties:
+            state:
+              type: string
+              enum: [RUNNING, FAILED, PAUSED, UNASSIGNED]
+            worker_id:
+              type: string
+            trace:
+              type: string
+              description: Error stacktrace if state is FAILED
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              state:
+                type: string
+                enum: [RUNNING, FAILED, PAUSED, UNASSIGNED]
+              worker_id:
+                type: string
+              trace:
+                type: string
+        type:
+          type: string
+          enum: [source, sink]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error_code:
+          type: integer
+        message:
+          type: string
+
+  examples:
+    ScyllaSourceConfig:
+      summary: Scylla CDC Source Connector
+      value:
+        name: "scylla-source-users"
+        config:
+          connector.class: "com.scylladb.cdc.kafka.connect.ScyllaSourceConnector"
+          scylla.name: "scylla-cluster"
+          scylla.table.names: "ecommerce.users"
+          scylla.cluster.ip.addresses: "scylla:9042"
+          scylla.user: "${vault:cdc/scylla#username}"
+          scylla.password: "${vault:cdc/scylla#password}"
+          tasks.max: "4"
+          key.converter: "io.confluent.connect.avro.AvroConverter"
+          key.converter.schema.registry.url: "http://schema-registry:8081"
+          value.converter: "io.confluent.connect.avro.AvroConverter"
+          value.converter.schema.registry.url: "http://schema-registry:8081"
+          errors.tolerance: "none"
+          errors.deadletterqueue.topic.name: "dlq-scylla-source"
+          errors.deadletterqueue.context.headers.enable: "true"
+
+    PostgresSinkConfig:
+      summary: Postgres JDBC Sink Connector
+      value:
+        name: "postgres-sink-users"
+        config:
+          connector.class: "io.confluent.connect.jdbc.JdbcSinkConnector"
+          topics: "ecommerce.users"
+          connection.url: "jdbc:postgresql://postgres:5432/warehouse"
+          connection.user: "${vault:cdc/postgres#username}"
+          connection.password: "${vault:cdc/postgres#password}"
+          auto.create: "true"
+          auto.evolve: "true"
+          insert.mode: "upsert"
+          pk.mode: "record_key"
+          pk.fields: "user_id"
+          delete.enabled: "true"
+          batch.size: "3000"
+          errors.tolerance: "none"
+          errors.deadletterqueue.topic.name: "dlq-postgres-sink"
+          max.retries: "10"
+          retry.backoff.ms: "3000"
+
+    ConnectorStatusRunning:
+      summary: Healthy connector
+      value:
+        name: "scylla-source-users"
+        connector:
+          state: "RUNNING"
+          worker_id: "kafka-connect:8083"
+        tasks:
+          - id: 0
+            state: "RUNNING"
+            worker_id: "kafka-connect:8083"
+          - id: 1
+            state: "RUNNING"
+            worker_id: "kafka-connect:8083"
+        type: "source"
+
+    ConnectorStatusFailed:
+      summary: Failed connector
+      value:
+        name: "scylla-source-users"
+        connector:
+          state: "FAILED"
+          worker_id: "kafka-connect:8083"
+          trace: "org.apache.kafka.connect.errors.ConnectException: Failed to connect to ScyllaDB\n\tat ..."
+        tasks:
+          - id: 0
+            state: "FAILED"
+            worker_id: "kafka-connect:8083"
+            trace: "org.apache.kafka.connect.errors.ConnectException: ..."
+        type: "source"
