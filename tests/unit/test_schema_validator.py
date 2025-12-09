@@ -431,3 +431,212 @@ class TestCompatibilityModes:
         assert validator.check_compatibility(
             schema, schema, mode=CompatibilityMode.NONE
         ) is True
+
+
+class TestSchemaRegistryIntegration:
+    """Test Schema Registry integration functionality."""
+
+    @pytest.fixture
+    def validator(self):
+        """Create a SchemaValidator instance."""
+        return SchemaValidator()
+
+    @pytest.fixture
+    def mock_registry_client(self, mocker):
+        """Create a mock Schema Registry client."""
+        mock_client = mocker.Mock()
+        return mock_client
+
+    def test_get_schema_by_id_success(self, validator, mock_registry_client):
+        """Test retrieving schema by ID from registry."""
+        schema_dict = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        mock_registry_client.get_schema_by_id.return_value = schema_dict
+
+        # Test that schema_registry_client is used when available
+        validator.schema_registry_client = mock_registry_client
+        result = validator.get_schema_by_id(123)
+
+        assert result == schema_dict
+        mock_registry_client.get_schema_by_id.assert_called_once_with(123)
+
+    def test_get_schema_by_id_not_found(self, validator, mock_registry_client):
+        """Test handling of schema not found error."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.get_schema_by_id.side_effect = Exception("Schema not found")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Schema not found"):
+            validator.get_schema_by_id(999)
+
+    def test_get_latest_schema_version(self, validator, mock_registry_client):
+        """Test retrieving latest schema version for a subject."""
+        schema_dict = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}, {"name": "email", "type": "string"}]
+        }
+
+        mock_registry_client.get_latest_schema_version.return_value = (2, schema_dict)
+
+        validator.schema_registry_client = mock_registry_client
+        version, schema = validator.get_latest_schema_version("user-topic-value")
+
+        assert version == 2
+        assert schema == schema_dict
+        mock_registry_client.get_latest_schema_version.assert_called_once_with("user-topic-value")
+
+    def test_get_all_schema_versions(self, validator, mock_registry_client):
+        """Test retrieving all schema versions for a subject."""
+        versions = [
+            (1, {"type": "record", "name": "User", "fields": [{"name": "id", "type": "string"}]}),
+            (2, {"type": "record", "name": "User", "fields": [{"name": "id", "type": "string"}, {"name": "email", "type": "string", "default": ""}]})
+        ]
+
+        mock_registry_client.get_all_versions.return_value = versions
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.get_all_schema_versions("user-topic-value")
+
+        assert len(result) == 2
+        assert result[0][0] == 1
+        assert result[1][0] == 2
+
+    def test_register_schema(self, validator, mock_registry_client):
+        """Test registering a new schema."""
+        schema = {
+            "type": "record",
+            "name": "Product",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        mock_registry_client.register_schema.return_value = 10
+
+        validator.schema_registry_client = mock_registry_client
+        schema_id = validator.register_schema("product-topic-value", schema)
+
+        assert schema_id == 10
+        mock_registry_client.register_schema.assert_called_once_with("product-topic-value", schema)
+
+    def test_check_schema_compatibility_with_registry(self, validator, mock_registry_client):
+        """Test checking compatibility against registered schemas."""
+        old_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        new_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [
+                {"name": "id", "type": "string"},
+                {"name": "email", "type": "string", "default": ""}
+            ]
+        }
+
+        mock_registry_client.test_compatibility.return_value = True
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.test_compatibility_with_registry("user-topic-value", new_schema)
+
+        assert result is True
+        mock_registry_client.test_compatibility.assert_called_once_with("user-topic-value", new_schema)
+
+    def test_check_schema_compatibility_incompatible(self, validator, mock_registry_client):
+        """Test detecting incompatible schema."""
+        new_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "different_id", "type": "int"}]
+        }
+
+        mock_registry_client.test_compatibility.return_value = False
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.test_compatibility_with_registry("user-topic-value", new_schema)
+
+        assert result is False
+
+    def test_get_schema_versions_diff(self, validator, mock_registry_client):
+        """Test getting diff between schema versions."""
+        version1_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        version2_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [
+                {"name": "id", "type": "string"},
+                {"name": "email", "type": "string", "default": ""}
+            ]
+        }
+
+        mock_registry_client.get_schema_by_version.side_effect = [version1_schema, version2_schema]
+
+        validator.schema_registry_client = mock_registry_client
+        diff = validator.get_schema_diff("user-topic-value", 1, 2)
+
+        assert "added_fields" in diff
+        assert "removed_fields" in diff
+        assert "email" in diff["added_fields"]
+
+    def test_list_subjects(self, validator, mock_registry_client):
+        """Test listing all subjects in registry."""
+        subjects = ["user-topic-value", "product-topic-value", "order-topic-value"]
+
+        mock_registry_client.list_subjects.return_value = subjects
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.list_subjects()
+
+        assert result == subjects
+        assert len(result) == 3
+
+    def test_delete_schema_version(self, validator, mock_registry_client):
+        """Test deleting a specific schema version."""
+        mock_registry_client.delete_schema_version.return_value = True
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.delete_schema_version("user-topic-value", 1)
+
+        assert result is True
+        mock_registry_client.delete_schema_version.assert_called_once_with("user-topic-value", 1)
+
+    def test_schema_registry_client_not_configured(self, validator):
+        """Test graceful handling when Schema Registry client is not configured."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        # No client configured
+        validator.schema_registry_client = None
+
+        with pytest.raises(SchemaRegistryError, match="Schema Registry client not configured"):
+            validator.get_schema_by_id(123)
+
+    def test_get_compatibility_mode_from_registry(self, validator, mock_registry_client):
+        """Test getting compatibility mode from registry."""
+        mock_registry_client.get_compatibility.return_value = "BACKWARD"
+
+        validator.schema_registry_client = mock_registry_client
+        mode = validator.get_registry_compatibility_mode("user-topic-value")
+
+        assert mode == CompatibilityMode.BACKWARD
+
+    def test_set_compatibility_mode_in_registry(self, validator, mock_registry_client):
+        """Test setting compatibility mode in registry."""
+        mock_registry_client.set_compatibility.return_value = True
+
+        validator.schema_registry_client = mock_registry_client
+        result = validator.set_registry_compatibility_mode("user-topic-value", CompatibilityMode.FULL)
+
+        assert result is True
+        mock_registry_client.set_compatibility.assert_called_once_with("user-topic-value", "FULL")

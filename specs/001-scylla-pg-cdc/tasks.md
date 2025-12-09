@@ -157,19 +157,19 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 ### Schema Management Utilities
 
-- [ ] T050 [US2] Enhance src/utils/schema_validator.py with Schema Registry integration for version comparison
-- [ ] T051 [US2] Create scripts/check-schema-compatibility.sh to validate schema changes before applying
-- [ ] T052 [US2] Add schema change logging to configs/connect/connect-distributed.properties
+- [x] T050 [US2] Enhance src/utils/schema_validator.py with Schema Registry integration for version comparison
+- [x] T051 [US2] Create scripts/check-schema-compatibility.sh to validate schema changes before applying
+- [x] T052 [US2] Add schema change logging to configs/connect/connect-distributed.properties
 
 ### Schema Evolution Testing Scripts
 
-- [ ] T053 [US2] Create scripts/test-schema-add-column.sh to test backward-compatible column addition
-- [ ] T054 [US2] Create scripts/test-schema-remove-column.sh to test column removal handling
-- [ ] T055 [US2] Create scripts/test-schema-incompatible.sh to verify DLQ routing for incompatible changes
+- [x] T053 [US2] Create scripts/test-schema-add-column.sh to test backward-compatible column addition
+- [x] T054 [US2] Create scripts/test-schema-remove-column.sh to test column removal handling
+- [x] T055 [US2] Create scripts/test-schema-incompatible.sh to verify DLQ routing for incompatible changes
 
 ### Unit Tests for Schema Validator (TDD - Write Before Enhanced Implementation)
 
-- [ ] T056 [US2] Add Schema Registry mock integration tests to tests/unit/test_schema_validator.py
+- [x] T056 [US2] Add Schema Registry mock integration tests to tests/unit/test_schema_validator.py
 
 **Checkpoint**: User Stories 1 AND 2 should both work independently. Schema evolution is handled gracefully.
 

@@ -6,9 +6,10 @@ in the CDC pipeline.
 """
 
 import json
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,11 @@ class SchemaCompatibilityError(Exception):
     pass
 
 
+class SchemaRegistryError(Exception):
+    """Raised when Schema Registry operations fail."""
+    pass
+
+
 class SchemaValidator:
     """
     Validator for CDC pipeline schemas.
@@ -46,15 +52,108 @@ class SchemaValidator:
     between schema versions.
     """
 
-    def __init__(self, compatibility_mode: CompatibilityMode = CompatibilityMode.BACKWARD):
+    def __init__(self, compatibility_mode: CompatibilityMode = CompatibilityMode.BACKWARD, schema_registry_url: Optional[str] = None):
         """
         Initialize schema validator.
 
         Args:
             compatibility_mode: Schema compatibility mode to enforce
+            schema_registry_url: URL of Schema Registry (e.g., http://localhost:8081)
         """
         self.compatibility_mode = compatibility_mode
+        self.schema_registry_url = schema_registry_url
+        self.schema_registry_client = None
+
+        if schema_registry_url:
+            self._init_schema_registry_client()
+
         logger.info(f"Initialized SchemaValidator with {compatibility_mode.value} compatibility")
+
+    def _init_schema_registry_client(self):
+        """Initialize Schema Registry HTTP client."""
+        class SimpleSchemaRegistryClient:
+            """Simple HTTP client for Schema Registry."""
+
+            def __init__(self, url: str):
+                self.url = url.rstrip('/')
+                self.session = requests.Session()
+                self.session.headers.update({"Content-Type": "application/vnd.schemaregistry.v1+json"})
+
+            def get_schema_by_id(self, schema_id: int) -> Dict[str, Any]:
+                """Get schema by ID."""
+                response = self.session.get(f"{self.url}/schemas/ids/{schema_id}")
+                response.raise_for_status()
+                return response.json()["schema"]
+
+            def get_latest_schema_version(self, subject: str) -> Tuple[int, Dict[str, Any]]:
+                """Get latest schema version for a subject."""
+                response = self.session.get(f"{self.url}/subjects/{subject}/versions/latest")
+                response.raise_for_status()
+                data = response.json()
+                return data["version"], json.loads(data["schema"])
+
+            def get_all_versions(self, subject: str) -> List[Tuple[int, Dict[str, Any]]]:
+                """Get all versions for a subject."""
+                response = self.session.get(f"{self.url}/subjects/{subject}/versions")
+                response.raise_for_status()
+                versions = response.json()
+
+                results = []
+                for version in versions:
+                    resp = self.session.get(f"{self.url}/subjects/{subject}/versions/{version}")
+                    resp.raise_for_status()
+                    data = resp.json()
+                    results.append((data["version"], json.loads(data["schema"])))
+
+                return results
+
+            def register_schema(self, subject: str, schema: Dict[str, Any]) -> int:
+                """Register a new schema."""
+                payload = {"schema": json.dumps(schema)}
+                response = self.session.post(f"{self.url}/subjects/{subject}/versions", json=payload)
+                response.raise_for_status()
+                return response.json()["id"]
+
+            def test_compatibility(self, subject: str, schema: Dict[str, Any]) -> bool:
+                """Test if schema is compatible."""
+                payload = {"schema": json.dumps(schema)}
+                response = self.session.post(f"{self.url}/compatibility/subjects/{subject}/versions/latest", json=payload)
+                response.raise_for_status()
+                return response.json()["is_compatible"]
+
+            def get_schema_by_version(self, subject: str, version: int) -> Dict[str, Any]:
+                """Get schema by subject and version."""
+                response = self.session.get(f"{self.url}/subjects/{subject}/versions/{version}")
+                response.raise_for_status()
+                return json.loads(response.json()["schema"])
+
+            def list_subjects(self) -> List[str]:
+                """List all subjects."""
+                response = self.session.get(f"{self.url}/subjects")
+                response.raise_for_status()
+                return response.json()
+
+            def delete_schema_version(self, subject: str, version: int) -> bool:
+                """Delete a schema version."""
+                response = self.session.delete(f"{self.url}/subjects/{subject}/versions/{version}")
+                response.raise_for_status()
+                return True
+
+            def get_compatibility(self, subject: str) -> str:
+                """Get compatibility mode for subject."""
+                response = self.session.get(f"{self.url}/config/{subject}")
+                response.raise_for_status()
+                return response.json()["compatibilityLevel"]
+
+            def set_compatibility(self, subject: str, level: str) -> bool:
+                """Set compatibility mode for subject."""
+                payload = {"compatibility": level}
+                response = self.session.put(f"{self.url}/config/{subject}", json=payload)
+                response.raise_for_status()
+                return True
+
+        self.schema_registry_client = SimpleSchemaRegistryClient(self.schema_registry_url)
+        logger.info(f"Initialized Schema Registry client for {self.schema_registry_url}")
 
     def validate_avro_schema(self, schema: Dict[str, Any]) -> bool:
         """
@@ -346,3 +445,263 @@ class SchemaValidator:
 
         logger.debug(f"Generated schema fingerprint: {fingerprint}")
         return fingerprint
+
+    # ============================================================================
+    # Schema Registry Integration Methods
+    # ============================================================================
+
+    def _ensure_registry_client(self):
+        """Ensure Schema Registry client is configured."""
+        if not self.schema_registry_client:
+            raise SchemaRegistryError("Schema Registry client not configured")
+
+    def get_schema_by_id(self, schema_id: int) -> Dict[str, Any]:
+        """
+        Get schema from registry by ID.
+
+        Args:
+            schema_id: Schema ID in registry
+
+        Returns:
+            Schema dictionary
+
+        Raises:
+            SchemaRegistryError: If schema not found or registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            schema = self.schema_registry_client.get_schema_by_id(schema_id)
+            logger.info(f"Retrieved schema {schema_id} from registry")
+            return schema
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to get schema {schema_id}: {e}")
+
+    def get_latest_schema_version(self, subject: str) -> Tuple[int, Dict[str, Any]]:
+        """
+        Get latest schema version for a subject.
+
+        Args:
+            subject: Subject name (e.g., "topic-value")
+
+        Returns:
+            Tuple of (version number, schema dictionary)
+
+        Raises:
+            SchemaRegistryError: If subject not found or registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            version, schema = self.schema_registry_client.get_latest_schema_version(subject)
+            logger.info(f"Retrieved latest schema for {subject}: version {version}")
+            return version, schema
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to get latest schema for {subject}: {e}")
+
+    def get_all_schema_versions(self, subject: str) -> List[Tuple[int, Dict[str, Any]]]:
+        """
+        Get all schema versions for a subject.
+
+        Args:
+            subject: Subject name
+
+        Returns:
+            List of (version, schema) tuples
+
+        Raises:
+            SchemaRegistryError: If subject not found or registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            versions = self.schema_registry_client.get_all_versions(subject)
+            logger.info(f"Retrieved {len(versions)} version(s) for {subject}")
+            return versions
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to get versions for {subject}: {e}")
+
+    def register_schema(self, subject: str, schema: Dict[str, Any]) -> int:
+        """
+        Register a new schema with the registry.
+
+        Args:
+            subject: Subject name
+            schema: Schema to register
+
+        Returns:
+            Schema ID
+
+        Raises:
+            SchemaRegistryError: If registration fails
+        """
+        self._ensure_registry_client()
+
+        try:
+            schema_id = self.schema_registry_client.register_schema(subject, schema)
+            logger.info(f"Registered schema for {subject}: ID {schema_id}")
+            return schema_id
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to register schema for {subject}: {e}")
+
+    def test_compatibility_with_registry(self, subject: str, schema: Dict[str, Any]) -> bool:
+        """
+        Test if schema is compatible with registered schemas.
+
+        Args:
+            subject: Subject name
+            schema: Schema to test
+
+        Returns:
+            True if compatible, False otherwise
+
+        Raises:
+            SchemaRegistryError: If registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            is_compatible = self.schema_registry_client.test_compatibility(subject, schema)
+            logger.info(f"Compatibility test for {subject}: {is_compatible}")
+            return is_compatible
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to test compatibility for {subject}: {e}")
+
+    def get_schema_diff(self, subject: str, version1: int, version2: int) -> Dict[str, List[str]]:
+        """
+        Get diff between two schema versions.
+
+        Args:
+            subject: Subject name
+            version1: First version number
+            version2: Second version number
+
+        Returns:
+            Dictionary with added_fields, removed_fields, and changed_fields
+
+        Raises:
+            SchemaRegistryError: If versions not found
+        """
+        self._ensure_registry_client()
+
+        try:
+            schema1 = self.schema_registry_client.get_schema_by_version(subject, version1)
+            schema2 = self.schema_registry_client.get_schema_by_version(subject, version2)
+
+            # Calculate diff for record types
+            diff = {
+                "added_fields": [],
+                "removed_fields": [],
+                "changed_fields": []
+            }
+
+            if schema1.get("type") == "record" and schema2.get("type") == "record":
+                fields1 = {f["name"]: f for f in schema1.get("fields", [])}
+                fields2 = {f["name"]: f for f in schema2.get("fields", [])}
+
+                # Added fields
+                diff["added_fields"] = [name for name in fields2 if name not in fields1]
+
+                # Removed fields
+                diff["removed_fields"] = [name for name in fields1 if name not in fields2]
+
+                # Changed fields
+                for name in fields1:
+                    if name in fields2 and fields1[name]["type"] != fields2[name]["type"]:
+                        diff["changed_fields"].append(name)
+
+            logger.info(f"Schema diff for {subject} v{version1}->v{version2}: "
+                        f"{len(diff['added_fields'])} added, {len(diff['removed_fields'])} removed, "
+                        f"{len(diff['changed_fields'])} changed")
+
+            return diff
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to get schema diff: {e}")
+
+    def list_subjects(self) -> List[str]:
+        """
+        List all subjects in the registry.
+
+        Returns:
+            List of subject names
+
+        Raises:
+            SchemaRegistryError: If registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            subjects = self.schema_registry_client.list_subjects()
+            logger.info(f"Found {len(subjects)} subject(s) in registry")
+            return subjects
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to list subjects: {e}")
+
+    def delete_schema_version(self, subject: str, version: int) -> bool:
+        """
+        Delete a specific schema version.
+
+        Args:
+            subject: Subject name
+            version: Version to delete
+
+        Returns:
+            True if deleted successfully
+
+        Raises:
+            SchemaRegistryError: If deletion fails
+        """
+        self._ensure_registry_client()
+
+        try:
+            result = self.schema_registry_client.delete_schema_version(subject, version)
+            logger.info(f"Deleted schema version {version} for {subject}")
+            return result
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to delete schema version: {e}")
+
+    def get_registry_compatibility_mode(self, subject: str) -> CompatibilityMode:
+        """
+        Get compatibility mode from registry for a subject.
+
+        Args:
+            subject: Subject name
+
+        Returns:
+            CompatibilityMode
+
+        Raises:
+            SchemaRegistryError: If registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            mode_str = self.schema_registry_client.get_compatibility(subject)
+            mode = CompatibilityMode[mode_str]
+            logger.info(f"Compatibility mode for {subject}: {mode.value}")
+            return mode
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to get compatibility mode: {e}")
+
+    def set_registry_compatibility_mode(self, subject: str, mode: CompatibilityMode) -> bool:
+        """
+        Set compatibility mode in registry for a subject.
+
+        Args:
+            subject: Subject name
+            mode: CompatibilityMode to set
+
+        Returns:
+            True if set successfully
+
+        Raises:
+            SchemaRegistryError: If registry error
+        """
+        self._ensure_registry_client()
+
+        try:
+            result = self.schema_registry_client.set_compatibility(subject, mode.value)
+            logger.info(f"Set compatibility mode for {subject} to {mode.value}")
+            return result
+        except Exception as e:
+            raise SchemaRegistryError(f"Failed to set compatibility mode: {e}")
