@@ -1,0 +1,169 @@
+version: '3.8'
+
+# Integration testing environment - minimal setup for fast test execution
+# This compose file includes only essential services needed for integration tests
+
+services:
+  # ============================================================================
+  # Kafka Ecosystem (Minimal for Testing)
+  # ============================================================================
+
+  zookeeper-test:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: zookeeper-test
+    hostname: zookeeper-test
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  kafka-test:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: kafka-test
+    hostname: kafka-test
+    depends_on:
+      zookeeper-test:
+        condition: service_healthy
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-test:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-test:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_ENABLE_IDEMPOTENCE: 'true'
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_MS: 3600000  # 1 hour for tests
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  schema-registry-test:
+    image: confluentinc/cp-schema-registry:7.5.3
+    container_name: schema-registry-test
+    hostname: schema-registry-test
+    depends_on:
+      kafka-test:
+        condition: service_healthy
+    ports:
+      - "8082:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry-test
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka-test:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: BACKWARD
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # Source Database (ScyllaDB) - Test Configuration
+  # ============================================================================
+
+  scylla-test:
+    image: scylladb/scylla:5.4
+    container_name: scylla-test
+    hostname: scylla-test
+    ports:
+      - "9043:9042"
+    command: >
+      --smp 1
+      --memory 1G
+      --overprovisioned 1
+      --api-address 0.0.0.0
+      --developer-mode 1
+      --experimental-features cdc
+    environment:
+      - SCYLLA_CLUSTER_NAME=test-cluster
+    volumes:
+      - ../tests/fixtures/scylla-test-init.cql:/docker-entrypoint-initdb.d/init.cql
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # ============================================================================
+  # Target Database (PostgreSQL) - Test Configuration
+  # ============================================================================
+
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: postgres-test
+    hostname: postgres-test
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: test_warehouse
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c fsync=off
+      -c synchronous_commit=off
+      -c full_page_writes=off
+      -c random_page_cost=1.0
+    volumes:
+      - ../tests/fixtures/postgres-test-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # Secrets Management (Vault) - Test Configuration
+  # ============================================================================
+
+  vault-test:
+    image: hashicorp/vault:1.15
+    container_name: vault-test
+    hostname: vault-test
+    ports:
+      - "8201:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: test-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    command: server -dev -dev-root-token-id=test-token
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+networks:
+  test-network:
+    driver: bridge

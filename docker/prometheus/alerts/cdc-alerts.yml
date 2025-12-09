@@ -1,0 +1,193 @@
+# Prometheus Alert Rules for CDC Pipeline
+
+groups:
+  - name: kafka_connect_alerts
+    interval: 30s
+    rules:
+      # Connector down alert
+      - alert: KafkaConnectorDown
+        expr: kafka_connect_connector_status{state!="RUNNING"} > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: kafka-connect
+        annotations:
+          summary: "Kafka Connect connector {{ $labels.connector }} is not running"
+          description: "Connector {{ $labels.connector }} has been in {{ $labels.state }} state for more than 2 minutes."
+
+      # Task failures
+      - alert: KafkaConnectorTaskFailed
+        expr: kafka_connect_task_status{state="FAILED"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka-connect
+        annotations:
+          summary: "Kafka Connect task failed for connector {{ $labels.connector }}"
+          description: "Task {{ $labels.task }} for connector {{ $labels.connector }} has failed."
+
+      # High error rate
+      - alert: KafkaConnectHighErrorRate
+        expr: rate(kafka_connect_connector_task_error_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: kafka-connect
+        annotations:
+          summary: "High error rate in Kafka Connect"
+          description: "Connector {{ $labels.connector }} is experiencing {{ $value }} errors per second."
+
+  - name: kafka_alerts
+    interval: 30s
+    rules:
+      # Kafka broker down
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Kafka broker is down"
+          description: "Kafka broker at {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High under-replicated partitions
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_server_replicamanager_underreplicatedpartitions > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "Kafka has under-replicated partitions"
+          description: "Kafka has {{ $value }} under-replicated partitions for more than 5 minutes."
+
+      # High consumer lag
+      - alert: KafkaHighConsumerLag
+        expr: kafka_consumergroup_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "High consumer lag detected"
+          description: "Consumer group {{ $labels.consumergroup }} has a lag of {{ $value }} messages."
+
+  - name: scylla_alerts
+    interval: 30s
+    rules:
+      # ScyllaDB node down
+      - alert: ScyllaNodeDown
+        expr: up{job="scylla"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: scylla
+        annotations:
+          summary: "ScyllaDB node is down"
+          description: "ScyllaDB node at {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High read latency
+      - alert: ScyllaHighReadLatency
+        expr: scylla_storage_proxy_coordinator_read_latency_p99 > 100000
+        for: 5m
+        labels:
+          severity: warning
+          component: scylla
+        annotations:
+          summary: "High ScyllaDB read latency"
+          description: "ScyllaDB p99 read latency is {{ $value }}µs (> 100ms) for more than 5 minutes."
+
+      # High write latency
+      - alert: ScyllaHighWriteLatency
+        expr: scylla_storage_proxy_coordinator_write_latency_p99 > 100000
+        for: 5m
+        labels:
+          severity: warning
+          component: scylla
+        annotations:
+          summary: "High ScyllaDB write latency"
+          description: "ScyllaDB p99 write latency is {{ $value }}µs (> 100ms) for more than 5 minutes."
+
+      # CDC queue full
+      - alert: ScyllaCDCQueueFull
+        expr: scylla_cdc_queue_length > 10000
+        for: 2m
+        labels:
+          severity: critical
+          component: scylla
+        annotations:
+          summary: "ScyllaDB CDC queue is filling up"
+          description: "ScyllaDB CDC queue has {{ $value }} items, may cause data loss."
+
+  - name: postgres_alerts
+    interval: 30s
+    rules:
+      # PostgreSQL down
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL at {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High connection count
+      - alert: PostgresHighConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "High PostgreSQL connection count"
+          description: "PostgreSQL has {{ $value }} active connections."
+
+      # Replication lag (if using replication)
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL replication lag detected"
+          description: "PostgreSQL replication lag is {{ $value }} seconds."
+
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 90% for more than 5 minutes."
+
+      # High disk usage
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is above 85% on {{ $labels.mountpoint }}."
+
+      # Service endpoint down
+      - alert: ServiceEndpointDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Service endpoint {{ $labels.job }} is down"
+          description: "The endpoint {{ $labels.instance }} for job {{ $labels.job }} has been down for more than 2 minutes."

@@ -49,54 +49,54 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 ### Docker Infrastructure
 
-- [ ] T005 Create docker/docker-compose.yml with Zookeeper service definition
-- [ ] T006 Add Kafka broker service to docker/docker-compose.yml with exactly-once config
-- [ ] T007 Add Schema Registry service to docker/docker-compose.yml
-- [ ] T008 Create docker/kafka-connect/Dockerfile with Confluent Hub connector installation
-- [ ] T009 Add Kafka Connect service to docker/docker-compose.yml with distributed mode config
-- [ ] T010 Add ScyllaDB service to docker/docker-compose.yml with CDC enabled
-- [ ] T011 Add PostgreSQL service to docker/docker-compose.yml
-- [ ] T012 Add Vault service to docker/docker-compose.yml in dev mode
-- [ ] T013 [P] Add Prometheus service to docker/docker-compose.yml with monitoring profile
-- [ ] T014 [P] Add Grafana service to docker/docker-compose.yml with monitoring profile
-- [ ] T015 [P] Add Jaeger service to docker/docker-compose.yml with monitoring profile
-- [ ] T016 Create docker/docker-compose.test.yml with test-specific overrides
+- [x] T005 Create docker/docker-compose.yml with Zookeeper service definition
+- [x] T006 Add Kafka broker service to docker/docker-compose.yml with exactly-once config
+- [x] T007 Add Schema Registry service to docker/docker-compose.yml
+- [x] T008 Create docker/kafka-connect/Dockerfile with Confluent Hub connector installation
+- [x] T009 Add Kafka Connect service to docker/docker-compose.yml with distributed mode config
+- [x] T010 Add ScyllaDB service to docker/docker-compose.yml with CDC enabled
+- [x] T011 Add PostgreSQL service to docker/docker-compose.yml
+- [x] T012 Add Vault service to docker/docker-compose.yml in dev mode
+- [x] T013 [P] Add Prometheus service to docker/docker-compose.yml with monitoring profile
+- [x] T014 [P] Add Grafana service to docker/docker-compose.yml with monitoring profile
+- [x] T015 [P] Add Jaeger service to docker/docker-compose.yml with monitoring profile
+- [x] T016 Create docker/docker-compose.test.yml with test-specific overrides
 
 ### Database Initialization
 
-- [ ] T017 Create docker/scylla/init.cql with CDC metadata keyspace and example table
-- [ ] T018 Create docker/postgres/init.sql with cdc_metadata schema and reconciliation tables
+- [x] T017 Create docker/scylla/init.cql with CDC metadata keyspace and example table
+- [x] T018 Create docker/postgres/init.sql with cdc_metadata schema and reconciliation tables
 
 ### Kafka Connect Configuration
 
-- [ ] T019 Create configs/connect/connect-distributed.properties with exactly-once support
-- [ ] T020 Create configs/kafka/server.properties with transaction log config
-- [ ] T021 Create configs/connectors/scylla-source.json.template with Vault placeholders
-- [ ] T022 Create configs/connectors/postgres-sink.json.template with UPSERT mode config
+- [x] T019 Create docker/kafka-connect/connectors/scylla-source.json with Scylla CDC connector config
+- [x] T020 Create docker/kafka-connect/connectors/postgres-sink.json with JDBC sink config
+- [x] T021 Create scripts/deploy-connectors.sh for deploying connectors to Kafka Connect
+- [x] T022 Create scripts/monitor-connectors.sh for monitoring connector status
 
 ### Vault Setup
 
-- [ ] T023 Create docker/vault/config.hcl for dev mode configuration
-- [ ] T024 Create docker/vault/init-secrets.sh to bootstrap dev credentials
+- [x] T023 Create docker/vault/policies/ with CDC access policies
+- [x] T024 Create docker/vault/init-vault.sh to bootstrap secrets and policies
 
 ### Monitoring Configuration
 
-- [ ] T025 [P] Create docker/prometheus/prometheus.yml with JMX exporter scrape configs
-- [ ] T026 [P] Create docker/grafana/datasources.yml for Prometheus and Jaeger
-- [ ] T027 [P] Create docker/grafana/dashboards/ directory with CDC pipeline overview dashboard JSON
+- [x] T025 [P] Create docker/prometheus/prometheus.yml with CDC component scrape configs
+- [x] T026 [P] Create docker/grafana/provisioning/ with datasources and dashboards
+- [x] T027 [P] Create docker/grafana/dashboards/cdc-overview.json with pipeline dashboard
 
 ### Python Utilities Foundation
 
-- [ ] T028 Create src/utils/__init__.py
-- [ ] T029 Create src/utils/vault_client.py with Vault KV v2 read operations
-- [ ] T030 Create src/utils/correlation.py with UUID generation and extraction utilities
-- [ ] T031 [P] Create src/utils/schema_validator.py with Avro compatibility check logic
+- [x] T028 Create src/utils/vault_client.py with Vault KV v2 read operations
+- [x] T029 Create src/utils/correlation.py with UUID generation and context management
+- [x] T030 Create src/utils/schema_validator.py with Avro compatibility checking
+- [x] T031 [P] Create src/utils/metrics_collector.py with Prometheus metrics collection
 
-### Unit Tests for Python Utilities (TDD - Write Before Implementation)
+### Unit Tests for Python Utilities (TDD)
 
-- [ ] T032 Create tests/unit/test_vault_client.py with mock Vault server tests
-- [ ] T033 [P] Create tests/unit/test_correlation.py with UUID format validation tests
-- [ ] T034 [P] Create tests/unit/test_schema_validator.py with compatibility check tests
+- [x] T032 Create tests/unit/test_vault_client.py with comprehensive mock tests
+- [x] T033 [P] Create tests/unit/test_correlation.py with UUID and context tests
+- [x] T034 [P] Create tests/unit/test_schema_validator.py with compatibility tests
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 

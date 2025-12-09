@@ -1,0 +1,68 @@
+{
+  "name": "scylla-cdc-source",
+  "config": {
+    "connector.class": "com.scylladb.cdc.debezium.connector.ScyllaConnector",
+    "tasks.max": "4",
+
+    "scylla.cluster.ip.addresses": "scylla:9042",
+    "scylla.name": "scylla-cluster",
+    "scylla.table.names": "app_data.users,app_data.orders,app_data.order_items,app_data.products,app_data.inventory_transactions",
+
+    "scylla.user": "${file:/vault/secrets/scylla-credentials:username}",
+    "scylla.password": "${file:/vault/secrets/scylla-credentials:password}",
+
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+
+    "topic.prefix": "cdc.scylla",
+    "topic.creation.default.replication.factor": 1,
+    "topic.creation.default.partitions": 8,
+    "topic.creation.default.cleanup.policy": "delete",
+    "topic.creation.default.retention.ms": 86400000,
+    "topic.creation.default.compression.type": "snappy",
+
+    "snapshot.mode": "initial",
+    "snapshot.consistency.mode": "all_tables",
+
+    "poll.interval.ms": 1000,
+    "max.batch.size": 2048,
+    "max.queue.size": 8192,
+
+    "schema.history.internal.kafka.topic": "scylla-schema-history",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+
+    "transforms": "addMetadata,route",
+    "transforms.addMetadata.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+    "transforms.addMetadata.timestamp.field": "cdc_timestamp",
+    "transforms.addMetadata.static.field": "cdc_source",
+    "transforms.addMetadata.static.value": "scylla-cdc",
+
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "cdc\\.scylla\\.app_data\\.(.*)",
+    "transforms.route.replacement": "cdc.scylla.$1",
+
+    "errors.tolerance": "all",
+    "errors.log.enable": true,
+    "errors.log.include.messages": true,
+    "errors.deadletterqueue.topic.name": "dlq-scylla-source",
+    "errors.deadletterqueue.topic.replication.factor": 1,
+    "errors.deadletterqueue.context.headers.enable": true,
+
+    "heartbeat.interval.ms": 30000,
+    "heartbeat.topics.prefix": "heartbeat.scylla",
+
+    "producer.override.compression.type": "snappy",
+    "producer.override.enable.idempotence": true,
+    "producer.override.acks": "all",
+    "producer.override.max.in.flight.requests.per.connection": 1,
+    "producer.override.retries": 2147483647,
+    "producer.override.delivery.timeout.ms": 120000,
+    "producer.override.request.timeout.ms": 30000,
+
+    "predicates": "isHeartbeat",
+    "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isHeartbeat.pattern": "heartbeat.*"
+  }
+}

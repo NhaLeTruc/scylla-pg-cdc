@@ -1,0 +1,108 @@
+# Prometheus Configuration for CDC Pipeline Monitoring
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'cdc-pipeline'
+    environment: 'development'
+
+# Alertmanager configuration (optional, for production)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load alert rules
+rule_files:
+  - '/etc/prometheus/alerts/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Kafka broker metrics
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9999']
+        labels:
+          service: 'kafka'
+          component: 'broker'
+
+  # Kafka Connect metrics
+  - job_name: 'kafka-connect'
+    static_configs:
+      - targets: ['kafka-connect:9999']
+        labels:
+          service: 'kafka-connect'
+          component: 'connector'
+    metric_relabel_configs:
+      # Keep only relevant Kafka Connect metrics
+      - source_labels: [__name__]
+        regex: 'kafka_connect_(connector|task|worker).*'
+        action: keep
+
+  # ScyllaDB metrics
+  - job_name: 'scylla'
+    static_configs:
+      - targets: ['scylla:9180']
+        labels:
+          service: 'scylla'
+          component: 'database'
+    metric_relabel_configs:
+      # Keep important ScyllaDB metrics
+      - source_labels: [__name__]
+        regex: 'scylla_(transport|cdc|storage|database).*'
+        action: keep
+
+  # PostgreSQL metrics (using postgres_exporter if configured)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+        labels:
+          service: 'postgres'
+          component: 'database'
+    # Note: Requires postgres_exporter sidecar for full metrics
+
+  # Jaeger metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+        labels:
+          service: 'jaeger'
+          component: 'tracing'
+
+  # Custom CDC pipeline application metrics (for Python utilities)
+  - job_name: 'cdc-utilities'
+    static_configs:
+      - targets: ['localhost:8000']
+        labels:
+          service: 'cdc-utilities'
+          component: 'application'
+    # This will be available when we deploy custom Python services
+
+# Service discovery configuration for dynamic environments
+# Uncomment for Kubernetes or cloud deployments
+# - job_name: 'kubernetes-pods'
+#   kubernetes_sd_configs:
+#     - role: pod
+#   relabel_configs:
+#     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+#       action: keep
+#       regex: true
+#     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+#       action: replace
+#       target_label: __metrics_path__
+#       regex: (.+)
+#     - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+#       action: replace
+#       regex: ([^:]+)(?::\d+)?;(\d+)
+#       replacement: $1:$2
+#       target_label: __address__
