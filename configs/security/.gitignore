@@ -1,0 +1,16 @@
+# Never commit sensitive files
+*.key
+*.pem
+*.p12
+*.jks
+*.password
+secrets/
+vault/secrets/
+tls/*.key
+tls/*.pem
+auth/*.password
+
+# Keep structure
+!tls/.gitkeep
+!auth/.gitkeep
+!vault/.gitkeep
