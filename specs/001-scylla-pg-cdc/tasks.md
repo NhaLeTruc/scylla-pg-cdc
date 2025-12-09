@@ -183,33 +183,33 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 ### Reconciliation Implementation (TDD - Unit Tests First)
 
-- [ ] T057 [US3] Create tests/unit/test_comparer.py with test cases for row comparison logic (WRITE FIRST)
-- [ ] T058 [US3] Create tests/unit/test_differ.py with test cases for discrepancy detection algorithms (WRITE FIRST)
-- [ ] T059 [US3] Create src/reconciliation/__init__.py
-- [ ] T060 [US3] Implement src/reconciliation/comparer.py with ScyllaDB and Postgres row comparison logic
-- [ ] T061 [US3] Implement src/reconciliation/differ.py with missing/mismatch/extra detection algorithms
-- [ ] T062 [US3] Implement src/reconciliation/repairer.py with INSERT/UPDATE/DELETE repair SQL generation
+- [x] T057 [US3] Create tests/unit/test_comparer.py with test cases for row comparison logic (WRITE FIRST)
+- [x] T058 [US3] Create tests/unit/test_differ.py with test cases for discrepancy detection algorithms (WRITE FIRST)
+- [x] T059 [US3] Create src/reconciliation/__init__.py
+- [x] T060 [US3] Implement src/reconciliation/comparer.py with ScyllaDB and Postgres row comparison logic
+- [x] T061 [US3] Implement src/reconciliation/differ.py with missing/mismatch/extra detection algorithms
+- [x] T062 [US3] Implement src/reconciliation/repairer.py with INSERT/UPDATE/DELETE repair SQL generation
 
 ### Reconciliation Scripts
 
-- [ ] T063 [US3] Create scripts/reconcile.py main CLI with argparse for modes (full, incremental, verify-only)
-- [ ] T064 [US3] Add checkpoint management to scripts/reconcile.py for resumable reconciliation
-- [ ] T065 [US3] Add batch processing to scripts/reconcile.py for memory efficiency (10k rows per batch)
-- [ ] T066 [US3] Add repair logic to scripts/reconcile.py with dry-run support
-- [ ] T067 [US3] Create scripts/schedule-reconciliation.sh as cron wrapper with logging
-- [ ] T068 [US3] Add reconciliation status command to scripts/reconcile.py (status subcommand)
-- [ ] T069 [US3] Add reconciliation report command to scripts/reconcile.py (report subcommand)
+- [x] T063 [US3] Create scripts/reconcile.py main CLI with argparse for modes (full, incremental, verify-only)
+- [x] T064 [US3] Add checkpoint management to scripts/reconcile.py for resumable reconciliation
+- [x] T065 [US3] Add batch processing to scripts/reconcile.py for memory efficiency (10k rows per batch)
+- [x] T066 [US3] Add repair logic to scripts/reconcile.py with dry-run support
+- [x] T067 [US3] Create scripts/schedule-reconciliation.sh as cron wrapper with logging
+- [x] T068 [US3] Add reconciliation status command to scripts/reconcile.py (status subcommand)
+- [x] T069 [US3] Add reconciliation report command to scripts/reconcile.py (report subcommand)
 
 ### Failure Recovery Testing
 
-- [ ] T070 [US3] Create scripts/test-failure-recovery.sh to simulate connector crash and verify recovery
-- [ ] T071 [US3] Create scripts/test-network-partition.sh using Docker network disconnect
-- [ ] T072 [US3] Create scripts/test-poison-message.sh to verify DLQ routing
+- [x] T070 [US3] Create scripts/test-failure-recovery.sh to simulate connector crash and verify recovery
+- [x] T071 [US3] Create scripts/test-network-partition.sh using Docker network disconnect
+- [x] T072 [US3] Create scripts/test-poison-message.sh to verify DLQ routing
 
 ### Dead Letter Queue Monitoring
 
-- [ ] T073 [US3] Create scripts/check-dlq.sh to monitor dead letter queue message counts
-- [ ] T074 [US3] Create scripts/replay-dlq.sh to reprocess DLQ messages after fixes
+- [x] T073 [US3] Create scripts/check-dlq.sh to monitor dead letter queue message counts
+- [x] T074 [US3] Create scripts/replay-dlq.sh to reprocess DLQ messages after fixes
 
 **Checkpoint**: User Stories 1, 2, AND 3 should all work independently. Pipeline recovers from failures gracefully.
 
