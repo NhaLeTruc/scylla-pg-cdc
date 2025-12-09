@@ -1,0 +1,77 @@
+{
+  "name": "postgres-sink",
+  "config": {
+    "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+    "tasks.max": "4",
+
+    "topics.regex": "cdc\\.scylla\\.(users|orders|order_items|products|inventory_transactions)",
+
+    "connection.url": "jdbc:postgresql://postgres:5432/warehouse",
+    "connection.user": "${file:/vault/secrets/postgres-credentials:username}",
+    "connection.password": "${file:/vault/secrets/postgres-credentials:password}",
+    "connection.attempts": 10,
+    "connection.backoff.ms": 3000,
+
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+
+    "auto.create": false,
+    "auto.evolve": false,
+    "insert.mode": "upsert",
+    "pk.mode": "record_key",
+    "pk.fields": "user_id,order_id,item_id,product_id,transaction_id",
+    "delete.enabled": true,
+
+    "table.name.format": "cdc_data.${topic}",
+    "table.types": "TABLE",
+
+    "db.timezone": "UTC",
+
+    "batch.size": 3000,
+    "max.retries": 10,
+    "retry.backoff.ms": 3000,
+
+    "poll.interval.ms": 100,
+
+    "transforms": "unwrap,extractTable,addFields",
+
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": false,
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,source.ts_ms",
+    "transforms.unwrap.add.headers": "op",
+
+    "transforms.extractTable.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.extractTable.regex": "cdc\\.scylla\\.(.*)",
+    "transforms.extractTable.replacement": "$1",
+
+    "transforms.addFields.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+    "transforms.addFields.timestamp.field": "cdc_timestamp",
+    "transforms.addFields.static.field": "cdc_source",
+    "transforms.addFields.static.value": "scylla-cdc",
+
+    "errors.tolerance": "all",
+    "errors.log.enable": true,
+    "errors.log.include.messages": true,
+    "errors.deadletterqueue.topic.name": "dlq-postgres-sink",
+    "errors.deadletterqueue.topic.replication.factor": 1,
+    "errors.deadletterqueue.context.headers.enable": true,
+
+    "consumer.override.isolation.level": "read_committed",
+    "consumer.override.enable.auto.commit": false,
+    "consumer.override.max.poll.records": 3000,
+    "consumer.override.max.poll.interval.ms": 300000,
+    "consumer.override.session.timeout.ms": 30000,
+    "consumer.override.heartbeat.interval.ms": 10000,
+
+    "predicates": "isHeartbeat,isTombstone",
+    "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isHeartbeat.pattern": "heartbeat.*",
+    "predicates.isTombstone.type": "org.apache.kafka.connect.transforms.predicates.RecordIsTombstone",
+
+    "dialect.name": "PostgreSqlDatabaseDialect",
+    "quote.sql.identifiers": "ALWAYS"
+  }
+}

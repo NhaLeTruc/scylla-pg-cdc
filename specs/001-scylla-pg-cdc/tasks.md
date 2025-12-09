@@ -129,21 +129,21 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 ### Connector Deployment Scripts
 
-- [ ] T041 [US1] Create scripts/deploy-connector.sh with Vault credential injection and Kafka Connect REST API calls
-- [ ] T042 [US1] Add connector status checking logic to scripts/health-check.sh
-- [ ] T043 [US1] Create scripts/pause-connector.sh for graceful connector pause
-- [ ] T044 [US1] Create scripts/resume-connector.sh for connector resume
-- [ ] T045 [US1] Create scripts/restart-connector.sh for connector restart
+- [x] T041 [US1] Create scripts/deploy-connector.sh with Vault credential injection and Kafka Connect REST API calls
+- [x] T042 [US1] Add connector status checking logic to scripts/health-check.sh
+- [x] T043 [US1] Create scripts/pause-connector.sh for graceful connector pause
+- [x] T044 [US1] Create scripts/resume-connector.sh for connector resume
+- [x] T045 [US1] Create scripts/restart-connector.sh for connector restart
 
 ### Connector Configuration
 
-- [ ] T046 [P] [US1] Finalize configs/connectors/scylla-source.json with tasks.max=4 and DLQ config
-- [ ] T047 [P] [US1] Finalize configs/connectors/postgres-sink.json with batch.size=3000 and retry config
+- [x] T046 [P] [US1] Finalize configs/connectors/scylla-source.json with tasks.max=4 and DLQ config
+- [x] T047 [P] [US1] Finalize configs/connectors/postgres-sink.json with batch.size=3000 and retry config
 
 ### Verification Scripts
 
-- [ ] T048 [US1] Create scripts/test-replication.sh to insert test data and verify Postgres replication
-- [ ] T049 [US1] Create scripts/measure-latency.sh to measure end-to-end latency with timestamps
+- [x] T048 [US1] Create scripts/test-replication.sh to insert test data and verify Postgres replication
+- [x] T049 [US1] Create scripts/measure-latency.sh to measure end-to-end latency with timestamps
 
 **Checkpoint**: At this point, User Story 1 should be fully functional. Basic CDC replication works end-to-end.
 
