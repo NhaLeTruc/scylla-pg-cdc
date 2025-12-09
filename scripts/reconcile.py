@@ -22,7 +22,9 @@ import sys
 import os
 import argparse
 import logging
+import logging.handlers
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -37,13 +39,62 @@ from psycopg2.extras import RealDictCursor
 
 from src.reconciliation import RowComparer, DataDiffer, DataRepairer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s - %(message)s',
+
+class StructuredJSONFormatter(logging.Formatter):
+    """JSON formatter with correlation ID support."""
+
+    def __init__(self):
+        super().__init__()
+        self.correlation_id = str(uuid.uuid4())
+
+    def format(self, record):
+        log_data = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'level': record.levelname,
+            'logger': record.name,
+            'message': record.getMessage(),
+            'correlation_id': getattr(record, 'correlation_id', self.correlation_id),
+            'module': record.module,
+            'function': record.funcName,
+            'line': record.lineno,
+        }
+
+        # Add extra fields
+        if hasattr(record, 'table'):
+            log_data['table'] = record.table
+        if hasattr(record, 'mode'):
+            log_data['mode'] = record.mode
+        if hasattr(record, 'duration'):
+            log_data['duration_seconds'] = record.duration
+        if hasattr(record, 'discrepancies'):
+            log_data['discrepancies'] = record.discrepancies
+
+        if record.exc_info:
+            log_data['exception'] = self.formatException(record.exc_info)
+
+        return json.dumps(log_data)
+
+
+# Configure structured logging
+json_handler = logging.StreamHandler()
+json_handler.setFormatter(StructuredJSONFormatter())
+
+# Human-readable handler for console
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(
+    '[%(asctime)s] %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
-)
+))
+
+# Configure root logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(console_handler)
+
+# Add JSON handler if JSON_LOGGING env var is set
+if os.getenv('JSON_LOGGING', 'false').lower() == 'true':
+    logger.addHandler(json_handler)
+    logger.propagate = False
 
 
 class ReconciliationCheckpoint:

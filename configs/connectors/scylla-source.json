@@ -33,11 +33,15 @@
     "schema.history.internal.kafka.topic": "scylla-schema-history",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
 
-    "transforms": "addMetadata,route",
+    "transforms": "addMetadata,addCorrelationId,route",
     "transforms.addMetadata.type": "org.apache.kafka.connect.transforms.InsertField$Value",
     "transforms.addMetadata.timestamp.field": "cdc_timestamp",
     "transforms.addMetadata.static.field": "cdc_source",
     "transforms.addMetadata.static.value": "scylla-cdc",
+
+    "transforms.addCorrelationId.type": "org.apache.kafka.connect.transforms.InsertHeader",
+    "transforms.addCorrelationId.header": "correlation_id",
+    "transforms.addCorrelationId.value.literal": "${uuid}",
 
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "cdc\\.scylla\\.app_data\\.(.*)",

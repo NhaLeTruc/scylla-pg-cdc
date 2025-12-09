@@ -1,0 +1,190 @@
+groups:
+- interval: 30s
+  name: cdc_replication
+  rules:
+  - alert: HighReplicationLag
+    annotations:
+      description: Replication lag for {{ $labels.table }} on {{ $labels.connector
+        }} is {{ $value }}s (threshold: 300s)
+      summary: High replication lag detected
+    expr: cdc_replication_lag_seconds > 300
+    for: 5m
+    labels:
+      component: replication
+      severity: warning
+  - alert: CriticalReplicationLag
+    annotations:
+      description: Replication lag for {{ $labels.table }} on {{ $labels.connector
+        }} is {{ $value }}s (threshold: 900s). Immediate action required!
+      summary: Critical replication lag
+    expr: cdc_replication_lag_seconds > 900
+    for: 5m
+    labels:
+      component: replication
+      severity: critical
+  - alert: HighReplicationErrorRate
+    annotations:
+      description: Error rate for {{ $labels.table }} is {{ $value }} errors/sec
+      summary: High replication error rate
+    expr: rate(cdc_replication_errors_total[5m]) > 0.1
+    for: 5m
+    labels:
+      component: replication
+      severity: warning
+  - alert: ReplicationThroughputDrop
+    annotations:
+      description: Replication throughput for {{ $labels.table }} is {{ $value }}
+        records/sec (below 10 records/sec threshold)
+      summary: Replication throughput dropped
+    expr: rate(cdc_records_replicated_total{status="success"}[5m]) < 10
+    for: 10m
+    labels:
+      component: replication
+      severity: warning
+- interval: 1m
+  name: cdc_reconciliation
+  rules:
+  - alert: HighDataDiscrepancy
+    annotations:
+      description: Data accuracy for {{ $labels.table }} is {{ $value }}% (below 95%
+        threshold)
+      summary: High data discrepancy detected
+    expr: cdc_data_accuracy_percentage < 95
+    for: 10m
+    labels:
+      component: reconciliation
+      severity: warning
+  - alert: CriticalDataDiscrepancy
+    annotations:
+      description: Data accuracy for {{ $labels.table }} is {{ $value }}% (below 90%
+        threshold). Immediate reconciliation required!
+      summary: Critical data discrepancy
+    expr: cdc_data_accuracy_percentage < 90
+    for: 5m
+    labels:
+      component: reconciliation
+      severity: critical
+  - alert: ReconciliationFailure
+    annotations:
+      description: Reconciliation for {{ $labels.table }} is failing
+      summary: Reconciliation failures detected
+    expr: rate(cdc_reconciliation_runs_total{status="failure"}[1h]) > 0
+    for: 5m
+    labels:
+      component: reconciliation
+      severity: warning
+  - alert: HighMissingRowCount
+    annotations:
+      description: '{{ $labels.table }} has {{ $value }} missing rows in target database'
+      summary: High missing row count
+    expr: cdc_current_missing_rows > 1000
+    for: 15m
+    labels:
+      component: reconciliation
+      severity: warning
+  - alert: HighMismatchRate
+    annotations:
+      description: '{{ $labels.table }} mismatch rate is {{ $value }} mismatches/hour'
+      summary: High data mismatch rate
+    expr: rate(cdc_discrepancies_found_total{discrepancy_type="mismatch"}[1h]) > 100
+    for: 10m
+    labels:
+      component: reconciliation
+      severity: warning
+- interval: 1m
+  name: cdc_schema
+  rules:
+  - alert: SchemaCompatibilityFailure
+    annotations:
+      description: Schema compatibility failure for {{ $labels.table }} in {{ $labels.compatibility_mode
+        }} mode
+      summary: Schema compatibility check failed
+    expr: rate(cdc_schema_compatibility_failures_total[10m]) > 0
+    for: 2m
+    labels:
+      component: schema
+      severity: critical
+  - alert: FrequentSchemaChanges
+    annotations:
+      description: '{{ $labels.table }} has {{ $value }} schema changes per hour (above
+        5/hour threshold)'
+      summary: Frequent schema changes detected
+    expr: rate(cdc_schema_changes_total[1h]) > 5
+    for: 10m
+    labels:
+      component: schema
+      severity: info
+  - alert: BreakingSchemaChange
+    annotations:
+      description: BREAKING schema change detected for {{ $labels.table }}. Manual
+        intervention may be required!
+      summary: Breaking schema change detected
+    expr: rate(cdc_schema_changes_total{compatibility="breaking"}[10m]) > 0
+    for: 1m
+    labels:
+      component: schema
+      severity: critical
+- interval: 1m
+  name: cdc_dlq
+  rules:
+  - alert: DLQMessagesAccumulating
+    annotations:
+      description: DLQ topic {{ $labels.topic }} has {{ $value }} messages (threshold:
+        100)
+      summary: DLQ messages accumulating
+    expr: cdc_dlq_messages_total > 100
+    for: 10m
+    labels:
+      component: dlq
+      severity: warning
+  - alert: CriticalDLQBacklog
+    annotations:
+      description: DLQ topic {{ $labels.topic }} has {{ $value }} messages (threshold:
+        1000). Investigate root cause immediately!
+      summary: Critical DLQ backlog
+    expr: cdc_dlq_messages_total > 1000
+    for: 5m
+    labels:
+      component: dlq
+      severity: critical
+  - alert: DLQGrowthRate
+    annotations:
+      description: DLQ topic {{ $labels.topic }} growing at {{ $value }} messages/sec
+      summary: DLQ growing rapidly
+    expr: rate(cdc_dlq_messages_total[5m]) > 10
+    for: 5m
+    labels:
+      component: dlq
+      severity: warning
+- interval: 30s
+  name: cdc_connector_health
+  rules:
+  - alert: ConnectorDown
+    annotations:
+      description: Connector {{ $labels.connector }} is not healthy. Check connector
+        status and logs.
+      summary: Connector is down
+    expr: cdc_connector_healthy == 0
+    for: 2m
+    labels:
+      component: connector
+      severity: critical
+  - alert: ConnectorRestartLoop
+    annotations:
+      description: Connector {{ $labels.connector }} is restarting frequently
+      summary: Connector restart loop detected
+    expr: rate(cdc_connector_healthy[10m]) > 0.1
+    for: 5m
+    labels:
+      component: connector
+      severity: warning
+  - alert: NoDataReplication
+    annotations:
+      description: No records have been replicated for {{ $labels.table }} in the
+        last 15 minutes
+      summary: No data replication activity
+    expr: rate(cdc_records_replicated_total[10m]) == 0
+    for: 15m
+    labels:
+      component: connector
+      severity: warning
