@@ -13,6 +13,21 @@ from psycopg2.extras import RealDictCursor
 import requests
 
 
+def check_connector_running(url):
+    """Check if Kafka Connect and postgres-sink connector are running."""
+    try:
+        response = requests.get(f"{url}/connectors/postgres-sink/status", timeout=5)
+        return response.status_code == 200 and response.json().get('connector', {}).get('state') == 'RUNNING'
+    except:
+        return False
+
+
+requires_connectors = pytest.mark.skipif(
+    not check_connector_running("http://localhost:8083"),
+    reason="Requires Kafka Connect with postgres-sink connector running"
+)
+
+
 @pytest.fixture(scope="module")
 def scylla_session():
     """Create ScyllaDB session."""
@@ -68,6 +83,7 @@ class TestPostgresSinkContract:
         assert 'email' in column_names
         cursor.close()
 
+    @requires_connectors
     def test_sink_handles_upsert_operations(self, scylla_session, postgres_conn):
         """Test sink performs UPSERT (INSERT or UPDATE)."""
         user_id = uuid.uuid4()
@@ -114,12 +130,13 @@ class TestPostgresSinkContract:
         assert result['status'] == 'active', "UPSERT didn't update existing record"
         cursor.close()
 
+    @requires_connectors
     def test_sink_preserves_data_types(self, scylla_session, postgres_conn):
         """Test sink preserves data types correctly."""
         product_id = uuid.uuid4()
 
         scylla_session.execute("""
-            INSERT INTO app_data.products (product_id, product_name, description, price, stock_quantity, category, created_at, updated_at, is_active)
+            INSERT INTO app_data.products (product_id, name, description, price, stock_quantity, category, created_at, updated_at, is_active)
             VALUES (%s, %s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (product_id, 'Type Test Product', 'Description', 99.99, 100, 'Test', True))
 
@@ -128,7 +145,7 @@ class TestPostgresSinkContract:
         # Verify data types
         cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
-            SELECT product_id, product_name, price, stock_quantity, is_active,
+            SELECT product_id, name, price, stock_quantity, is_active,
                    pg_typeof(product_id) as id_type,
                    pg_typeof(price) as price_type,
                    pg_typeof(stock_quantity) as qty_type,
@@ -152,13 +169,14 @@ class TestPostgresSinkContract:
         assert result['is_active'] is True
         cursor.close()
 
+    @requires_connectors
     def test_sink_handles_null_values(self, scylla_session, postgres_conn):
         """Test sink correctly handles NULL values."""
         product_id = uuid.uuid4()
 
         # Insert with some NULL values
         scylla_session.execute("""
-            INSERT INTO app_data.products (product_id, product_name, description, price, stock_quantity, category, created_at, updated_at, is_active)
+            INSERT INTO app_data.products (product_id, name, description, price, stock_quantity, category, created_at, updated_at, is_active)
             VALUES (%s, %s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (product_id, 'NULL Test', None, 10.00, 0, 'Test', True))
 
@@ -177,6 +195,7 @@ class TestPostgresSinkContract:
         assert result['description'] is None, "NULL value not preserved"
         cursor.close()
 
+    @requires_connectors
     def test_sink_batch_processing(self, scylla_session, postgres_conn):
         """Test sink processes messages in batches."""
         # Insert multiple records quickly
@@ -205,6 +224,7 @@ class TestPostgresSinkContract:
         assert count == 10, f"Batch processing failed: expected 10, got {count}"
         cursor.close()
 
+    @requires_connectors
     def test_sink_connector_configuration(self, kafka_connect_url):
         """Test sink connector is configured correctly."""
         response = requests.get(f"{kafka_connect_url}/connectors/postgres-sink/config")
@@ -225,6 +245,7 @@ class TestPostgresSinkContract:
         assert 'batch.size' in config
         assert int(config['batch.size']) > 0
 
+    @requires_connectors
     def test_sink_handles_special_characters(self, scylla_session, postgres_conn):
         """Test sink handles special characters in data."""
         user_id = uuid.uuid4()
@@ -250,6 +271,7 @@ class TestPostgresSinkContract:
         assert result['first_name'] == special_name, "Special characters not preserved"
         cursor.close()
 
+    @requires_connectors
     def test_sink_referential_integrity(self, scylla_session, postgres_conn):
         """Test sink maintains referential integrity across tables."""
         user_id = uuid.uuid4()
@@ -285,6 +307,7 @@ class TestPostgresSinkContract:
         assert result['user_id'] == str(user_id)
         cursor.close()
 
+    @requires_connectors
     def test_sink_error_handling_configuration(self, kafka_connect_url):
         """Test sink has proper error handling configured."""
         response = requests.get(f"{kafka_connect_url}/connectors/postgres-sink/config")
@@ -297,6 +320,7 @@ class TestPostgresSinkContract:
         assert 'errors.deadletterqueue.topic.name' in config
         assert config['errors.deadletterqueue.topic.name'] == 'dlq-postgres-sink'
 
+    @requires_connectors
     def test_sink_connection_pooling(self, kafka_connect_url):
         """Test sink uses connection pooling."""
         response = requests.get(f"{kafka_connect_url}/connectors/postgres-sink/config")
