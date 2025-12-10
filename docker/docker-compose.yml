@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================================================
   # Kafka Ecosystem
@@ -88,7 +86,6 @@ services:
       SCHEMA_REGISTRY_LOG4J_ROOT_LOGLEVEL: INFO
       # Schema evolution settings
       SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: BACKWARD
-      SCHEMA_REGISTRY_SCHEMA_REGISTRY_RESOURCE_EXTENSION_CLASS: io.confluent.kafka.schemaregistry.security.SchemaRegistrySecurityResourceExtension
     networks:
       - cdc-network
     healthcheck:
@@ -220,16 +217,12 @@ services:
       -c max_parallel_workers=4
       -c max_parallel_maintenance_workers=2
       -c log_destination=stderr
-      -c logging_collector=on
-      -c log_directory=/var/log/postgresql
-      -c log_filename=postgresql-%Y-%m-%d.log
       -c log_statement=mod
       -c log_duration=off
       -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - postgres-logs:/var/log/postgresql
     networks:
       - cdc-network
     healthcheck:
@@ -359,17 +352,13 @@ services:
       COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
       COLLECTOR_OTLP_ENABLED: "true"
       SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: "false"
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY: /badger/key
+      BADGER_EPHEMERAL: "true"
       QUERY_BASE_PATH: /jaeger
       METRICS_STORAGE_TYPE: prometheus
       PROMETHEUS_SERVER_URL: http://prometheus:9090
       PROMETHEUS_QUERY_SUPPORT_SPANMETRICS_CONNECTOR: "true"
       PROMETHEUS_QUERY_NAMESPACE: jaeger
       PROMETHEUS_QUERY_DURATION_UNIT: s
-    volumes:
-      - jaeger-data:/badger
     networks:
       - cdc-network
     healthcheck:

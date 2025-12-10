@@ -245,14 +245,28 @@ $$ LANGUAGE plpgsql;
 -- ============================================================================
 
 -- Create read-only role for analytics
-CREATE ROLE IF NOT EXISTS cdc_reader;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cdc_reader') THEN
+        CREATE ROLE cdc_reader;
+    END IF;
+END
+$$;
 GRANT USAGE ON SCHEMA cdc_data TO cdc_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA cdc_data TO cdc_reader;
-GRANT SELECT ON ALL MATERIALIZED VIEWS IN SCHEMA cdc_data TO cdc_reader;
+-- Grant select on materialized views individually (ALL MATERIALIZED VIEWS not supported in PG15)
+GRANT SELECT ON cdc_data.daily_order_summary TO cdc_reader;
+GRANT SELECT ON cdc_data.product_inventory_status TO cdc_reader;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cdc_data GRANT SELECT ON TABLES TO cdc_reader;
 
 -- Create write role for CDC connector
-CREATE ROLE IF NOT EXISTS cdc_writer;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cdc_writer') THEN
+        CREATE ROLE cdc_writer;
+    END IF;
+END
+$$;
 GRANT USAGE ON SCHEMA cdc_data TO cdc_writer;
 GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA cdc_data TO cdc_writer;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA cdc_data TO cdc_writer;
@@ -310,9 +324,9 @@ SELECT
 -- Validation Query: Check actual vs expected user counts by status
 CREATE OR REPLACE VIEW cdc_data.validate_user_counts AS
 SELECT
-    e.status,
-    e.expected_count,
-    COALESCE(a.actual_count, 0) AS actual_count,
+    e.status AS metric,
+    e.expected_count::TEXT AS expected_value,
+    COALESCE(a.actual_count, 0)::TEXT AS actual_value,
     CASE
         WHEN COALESCE(a.actual_count, 0) = e.expected_count THEN 'PASS'
         ELSE 'FAIL'
@@ -347,18 +361,18 @@ SELECT
 CREATE OR REPLACE VIEW cdc_data.validate_product_metrics AS
 SELECT
     e.metric,
-    e.expected_value,
+    e.expected_value::TEXT AS expected_value,
     CASE e.metric
-        WHEN 'total_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products)
-        WHEN 'active_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products WHERE is_active = true)
-        WHEN 'total_stock' THEN (SELECT SUM(stock_quantity)::INTEGER FROM cdc_data.products)
-        ELSE 0
+        WHEN 'total_products' THEN (SELECT COUNT(*)::TEXT FROM cdc_data.products)
+        WHEN 'active_products' THEN (SELECT COUNT(*)::TEXT FROM cdc_data.products WHERE is_active = true)
+        WHEN 'total_stock' THEN (SELECT COALESCE(SUM(stock_quantity), 0)::TEXT FROM cdc_data.products)
+        ELSE '0'
     END AS actual_value,
     CASE
         WHEN CASE e.metric
             WHEN 'total_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products)
             WHEN 'active_products' THEN (SELECT COUNT(*)::INTEGER FROM cdc_data.products WHERE is_active = true)
-            WHEN 'total_stock' THEN (SELECT SUM(stock_quantity)::INTEGER FROM cdc_data.products)
+            WHEN 'total_stock' THEN (SELECT COALESCE(SUM(stock_quantity), 0)::INTEGER FROM cdc_data.products)
             ELSE 0
         END = e.expected_value THEN 'PASS'
         ELSE 'FAIL'
@@ -388,19 +402,19 @@ SELECT
 CREATE OR REPLACE VIEW cdc_data.validate_order_metrics AS
 SELECT
     e.metric,
-    e.expected_value,
+    e.expected_value::TEXT AS expected_value,
     CASE e.metric
-        WHEN 'total_orders' THEN (SELECT COUNT(*)::NUMERIC FROM cdc_data.orders)
-        WHEN 'total_revenue' THEN (SELECT ROUND(SUM(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
-        WHEN 'avg_order_value' THEN (SELECT ROUND(AVG(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
-        ELSE 0
+        WHEN 'total_orders' THEN (SELECT COALESCE(COUNT(*), 0)::TEXT FROM cdc_data.orders)
+        WHEN 'total_revenue' THEN (SELECT COALESCE(ROUND(SUM(total_amount)::NUMERIC, 2), 0)::TEXT FROM cdc_data.orders)
+        WHEN 'avg_order_value' THEN (SELECT COALESCE(ROUND(AVG(total_amount)::NUMERIC, 2), 0)::TEXT FROM cdc_data.orders)
+        ELSE '0'
     END AS actual_value,
     CASE
         WHEN ABS(
             CASE e.metric
-                WHEN 'total_orders' THEN (SELECT COUNT(*)::NUMERIC FROM cdc_data.orders)
-                WHEN 'total_revenue' THEN (SELECT ROUND(SUM(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
-                WHEN 'avg_order_value' THEN (SELECT ROUND(AVG(total_amount)::NUMERIC, 2) FROM cdc_data.orders)
+                WHEN 'total_orders' THEN (SELECT COALESCE(COUNT(*), 0)::NUMERIC FROM cdc_data.orders)
+                WHEN 'total_revenue' THEN (SELECT COALESCE(ROUND(SUM(total_amount)::NUMERIC, 2), 0) FROM cdc_data.orders)
+                WHEN 'avg_order_value' THEN (SELECT COALESCE(ROUND(AVG(total_amount)::NUMERIC, 2), 0) FROM cdc_data.orders)
                 ELSE 0
             END - e.expected_value
         ) < 0.01 THEN 'PASS'
@@ -421,8 +435,8 @@ SELECT
 CREATE OR REPLACE VIEW cdc_data.validate_order_item_metrics AS
 SELECT
     e.metric,
-    e.expected_value,
-    (SELECT COUNT(*)::INTEGER FROM cdc_data.order_items) AS actual_value,
+    e.expected_value::TEXT AS expected_value,
+    (SELECT COUNT(*)::TEXT FROM cdc_data.order_items) AS actual_value,
     CASE
         WHEN (SELECT COUNT(*)::INTEGER FROM cdc_data.order_items) = e.expected_value THEN 'PASS'
         ELSE 'FAIL'
@@ -442,8 +456,8 @@ SELECT
 CREATE OR REPLACE VIEW cdc_data.validate_inventory_metrics AS
 SELECT
     e.metric,
-    e.expected_value,
-    (SELECT COUNT(*)::INTEGER FROM cdc_data.inventory_transactions) AS actual_value,
+    e.expected_value::TEXT AS expected_value,
+    (SELECT COUNT(*)::TEXT FROM cdc_data.inventory_transactions) AS actual_value,
     CASE
         WHEN (SELECT COUNT(*)::INTEGER FROM cdc_data.inventory_transactions) = e.expected_value THEN 'PASS'
         ELSE 'FAIL'

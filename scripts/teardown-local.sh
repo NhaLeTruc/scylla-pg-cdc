@@ -199,7 +199,7 @@ log_info "Removing containers..."
 if [ "$KEEP_VOLUMES" = true ]; then
     docker compose -f docker/docker-compose.yml down
 else
-    docker compose -f docker/docker-compose.yml down -v
+    docker compose -f docker/docker-compose.yml down -v --remove-orphans
 fi
 
 log_success "Containers removed"

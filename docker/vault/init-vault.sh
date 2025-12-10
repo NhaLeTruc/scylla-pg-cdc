@@ -155,7 +155,7 @@ create_tokens() {
 
     # Create token for CDC pipeline with cdc policy
     local cdc_token
-    cdc_token=$(vault token create -policy=cdc -format=json | jq -r '.auth.client_token')
+    cdc_token=$(vault token create -policy=cdc -field=token)
 
     log_success "CDC pipeline token created"
     log_info "CDC Token: ${cdc_token}"
@@ -165,7 +165,7 @@ create_tokens() {
 
     # Create readonly token for monitoring
     local readonly_token
-    readonly_token=$(vault token create -policy=readonly -format=json | jq -r '.auth.client_token')
+    readonly_token=$(vault token create -policy=readonly -field=token)
 
     log_success "Read-only token created"
     log_info "Readonly Token: ${readonly_token}"

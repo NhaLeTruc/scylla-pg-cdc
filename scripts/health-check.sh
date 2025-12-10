@@ -115,8 +115,8 @@ check_zookeeper() {
         return 1
     fi
 
-    # Check Zookeeper port
-    if docker exec zookeeper bash -c "echo ruok | nc localhost 2181" 2>/dev/null | grep -q "imok"; then
+    # Check Zookeeper port (using 'srvr' command as 'ruok' is not whitelisted in newer versions)
+    if docker exec zookeeper bash -c "echo srvr | nc localhost 2181" 2>/dev/null | grep -q "Mode:"; then
         log_success "Zookeeper: Healthy (port 2181)"
         return 0
     else

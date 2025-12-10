@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Integration testing environment - minimal setup for fast test execution
 # This compose file includes only essential services needed for integration tests
 
