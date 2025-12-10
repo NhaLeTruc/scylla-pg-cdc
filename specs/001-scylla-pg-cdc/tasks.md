@@ -257,17 +257,17 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T088 [P] Create docs/architecture.md documenting system architecture with diagrams
-- [ ] T089 [P] Create docs/runbook.md with operational procedures (deployment, scaling, troubleshooting)
-- [ ] T090 [P] Create docs/troubleshooting.md with common issues and solutions from quickstart.md
-- [ ] T091 [P] Create docs/scaling.md with capacity planning and horizontal scaling guide
-- [ ] T092 [P] Add Python type hints to all src/ modules
-- [ ] T093 [P] Add docstrings to all public functions in src/ modules
-- [ ] T094 Create scripts/backup-offsets.sh for Kafka Connect offset backup
-- [ ] T095 Create scripts/chaos-test.sh for failure injection testing (Toxiproxy integration)
-- [ ] T096 Add security hardening to configs/ files (TLS certificates, non-root users)
-- [ ] T097 Create performance benchmarking script scripts/benchmark.sh
-- [ ] T098 Update README.md with production deployment checklist from quickstart.md
+- [x] T088 [P] Create docs/architecture.md documenting system architecture with diagrams
+- [x] T089 [P] Create docs/runbook.md with operational procedures (deployment, scaling, troubleshooting)
+- [x] T090 [P] Create docs/troubleshooting.md with common issues and solutions from quickstart.md
+- [x] T091 [P] Create docs/scaling.md with capacity planning and horizontal scaling guide
+- [x] T092 [P] Add Python type hints to all src/ modules
+- [x] T093 [P] Add docstrings to all public functions in src/ modules
+- [x] T094 Create scripts/backup-offsets.sh for Kafka Connect offset backup
+- [x] T095 Create scripts/chaos-test.sh for failure injection testing (Toxiproxy integration)
+- [x] T096 Add security hardening to configs/ files (TLS certificates, non-root users)
+- [x] T097 Create performance benchmarking script scripts/benchmark.sh
+- [x] T098 Update README.md with production deployment checklist from quickstart.md
 
 ---
 
