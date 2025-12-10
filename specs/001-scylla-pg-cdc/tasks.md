@@ -277,15 +277,15 @@ description: "Task list for ScyllaDB to Postgres CDC Pipeline implementation"
 
 **⚠️ NOTE**: These tests are written AFTER all implementation phases above are complete
 
-- [ ] T099 Create tests/integration/test_end_to_end.py with full pipeline flow test (ScyllaDB → Postgres)
-- [ ] T100 [P] Create tests/integration/test_schema_evolution.py with add/remove column scenarios
-- [ ] T101 [P] Create tests/integration/test_failure_recovery.py with connector restart scenarios
-- [ ] T102 [P] Create tests/integration/fixtures/sample_data.sql with test data for ScyllaDB
-- [ ] T103 [P] Create tests/integration/fixtures/expected_results.sql with expected Postgres state
-- [ ] T104 Create tests/contract/test_scylla_connector.py validating connector output against contracts/
-- [ ] T105 [P] Create tests/contract/test_postgres_sink.py validating connector input against contracts/
-- [ ] T106 Configure pytest-docker-compose in pytest.ini for integration test environment
-- [ ] T107 Add integration test execution to scripts/test-all.sh script
+- [x] T099 Create tests/integration/test_end_to_end.py with full pipeline flow test (ScyllaDB → Postgres)
+- [x] T100 [P] Create tests/integration/test_schema_evolution.py with add/remove column scenarios
+- [x] T101 [P] Create tests/integration/test_failure_recovery.py with connector restart scenarios
+- [x] T102 [P] Create tests/integration/fixtures/sample_data.sql with test data for ScyllaDB
+- [x] T103 [P] Create tests/integration/fixtures/expected_results.sql with expected Postgres state
+- [x] T104 Create tests/contract/test_scylla_connector.py validating connector output against contracts/
+- [x] T105 [P] Create tests/contract/test_postgres_sink.py validating connector input against contracts/
+- [x] T106 Configure pytest-docker-compose in pytest.ini for integration test environment
+- [x] T107 Add integration test execution to scripts/test-all.sh script
 
 ---
 
