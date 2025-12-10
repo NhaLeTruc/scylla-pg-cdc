@@ -300,7 +300,11 @@ class MetricsCollector:
         Returns:
             Metric instance or None
         """
-        full_name = name if name.startswith(self.namespace) else f"{self.namespace}_{name}"
+        # First try the name as-is
+        if name in self._metrics:
+            return self._metrics[name]
+        # Then try with namespace prefix
+        full_name = f"{self.namespace}_{name}"
         return self._metrics.get(full_name)
 
     def clear_metrics(self) -> None:

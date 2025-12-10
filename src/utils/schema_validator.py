@@ -255,26 +255,29 @@ class SchemaValidator:
             old_fields = {f["name"]: f for f in old_schema.get("fields", [])}
             new_fields = {f["name"]: f for f in new_schema.get("fields", [])}
 
-            # All old fields must exist in new schema or have defaults
-            for field_name, old_field in old_fields.items():
+            # Check that no fields were removed from old schema
+            for field_name in old_fields:
                 if field_name not in new_fields:
                     raise SchemaCompatibilityError(
                         f"Field '{field_name}' removed without default value"
                     )
 
+            # Check that new fields have defaults
+            for field_name, new_field in new_fields.items():
+                if field_name not in old_fields and "default" not in new_field:
+                    raise SchemaCompatibilityError(
+                        f"New field '{field_name}' added without default value"
+                    )
+
+            # Check that fields in both schemas have compatible types
+            for field_name in set(old_fields.keys()) & set(new_fields.keys()):
+                old_field = old_fields[field_name]
                 new_field = new_fields[field_name]
 
                 # Check if field type changed
                 if not self._is_type_compatible(new_field["type"], old_field["type"]):
                     raise SchemaCompatibilityError(
                         f"Field '{field_name}' type changed incompatibly"
-                    )
-
-            # New fields must have defaults for backward compatibility
-            for field_name, new_field in new_fields.items():
-                if field_name not in old_fields and "default" not in new_field:
-                    raise SchemaCompatibilityError(
-                        f"New field '{field_name}' added without default value"
                     )
 
         logger.info("Backward compatibility check passed")
@@ -302,8 +305,42 @@ class SchemaValidator:
         """
         logger.debug("Checking forward compatibility")
 
-        # Forward compatibility is the reverse of backward compatibility
-        return self.check_backward_compatibility(old_schema, new_schema)
+        # Validate both schemas first
+        self.validate_avro_schema(new_schema)
+        self.validate_avro_schema(old_schema)
+
+        # Check if it's the same schema type
+        if new_schema.get("type") != old_schema.get("type"):
+            raise SchemaCompatibilityError(
+                f"Schema type changed from {old_schema.get('type')} to {new_schema.get('type')}"
+            )
+
+        # For record types, check field compatibility
+        if new_schema.get("type") == "record":
+            old_fields = {f["name"]: f for f in old_schema.get("fields", [])}
+            new_fields = {f["name"]: f for f in new_schema.get("fields", [])}
+
+            # Check that no fields were removed from old schema
+            # (old readers expect all their fields to be present or have defaults)
+            for field_name, old_field in old_fields.items():
+                if field_name not in new_fields:
+                    raise SchemaCompatibilityError(
+                        f"Field '{field_name}' removed in new schema"
+                    )
+
+            # Check that fields in both schemas have compatible types
+            for field_name in set(old_fields.keys()) & set(new_fields.keys()):
+                old_field = old_fields[field_name]
+                new_field = new_fields[field_name]
+
+                # Check if field type changed
+                if not self._is_type_compatible(new_field["type"], old_field["type"]):
+                    raise SchemaCompatibilityError(
+                        f"Field '{field_name}' type changed incompatibly"
+                    )
+
+        logger.info("Forward compatibility check passed")
+        return True
 
     def check_full_compatibility(
         self,

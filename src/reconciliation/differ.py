@@ -33,7 +33,8 @@ class DataDiffer:
         self,
         source_data: List[Dict[str, Any]],
         target_data: List[Dict[str, Any]],
-        key_field: Union[str, List[str]]
+        key_field: Union[str, List[str]],
+        case_sensitive_keys: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Find rows that exist in source but not in target.
@@ -42,12 +43,13 @@ class DataDiffer:
             source_data: Source dataset (ScyllaDB)
             target_data: Target dataset (PostgreSQL)
             key_field: Field name(s) to use as primary key
+            case_sensitive_keys: Whether keys are case-sensitive
 
         Returns:
             List of missing rows
         """
-        source_index = self.build_key_index(source_data, key_field)
-        target_index = self.build_key_index(target_data, key_field)
+        source_index = self.build_key_index(source_data, key_field, case_sensitive_keys)
+        target_index = self.build_key_index(target_data, key_field, case_sensitive_keys)
 
         missing_keys = set(source_index.keys()) - set(target_index.keys())
 
@@ -351,7 +353,8 @@ class DataDiffer:
     def build_key_index(
         self,
         data: List[Dict[str, Any]],
-        key_field: Union[str, List[str]]
+        key_field: Union[str, List[str]],
+        case_sensitive_keys: bool = True
     ) -> Dict[str, Dict[str, Any]]:
         """
         Build index for fast key lookups.
@@ -359,6 +362,7 @@ class DataDiffer:
         Args:
             data: Dataset to index
             key_field: Field name(s) to use as key
+            case_sensitive_keys: Whether keys are case-sensitive
 
         Returns:
             Dictionary mapping key → row
@@ -366,7 +370,7 @@ class DataDiffer:
         index = {}
 
         for row in data:
-            key = self._extract_key(row, key_field)
+            key = self._extract_key(row, key_field, case_sensitive_keys)
             index[key] = row
 
         return index

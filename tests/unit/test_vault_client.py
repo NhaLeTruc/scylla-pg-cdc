@@ -43,13 +43,15 @@ class TestVaultClient:
         assert client.vault_url == "http://env-vault:8200"
         assert client.vault_token == "env-token"
 
-    def test_init_missing_url_raises_error(self):
+    def test_init_missing_url_raises_error(self, monkeypatch):
         """Test that missing Vault URL raises ValueError."""
+        monkeypatch.delenv("VAULT_ADDR", raising=False)
         with pytest.raises(ValueError, match="Vault URL must be provided"):
             VaultClient(vault_token="test-token")
 
-    def test_init_missing_token_raises_error(self):
+    def test_init_missing_token_raises_error(self, monkeypatch):
         """Test that missing Vault token raises ValueError."""
+        monkeypatch.delenv("VAULT_TOKEN", raising=False)
         with pytest.raises(ValueError, match="Vault token must be provided"):
             VaultClient(vault_url="http://test:8200")
 
@@ -191,11 +193,12 @@ class TestVaultClient:
 
     def test_health_check_not_authenticated(self, mock_hvac_client):
         """Test health check with failed authentication."""
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        # After client is created, change authentication to fail
         mock_client = mock_hvac_client.return_value
         mock_client.is_authenticated.return_value = False
 
-        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
-        client.client = mock_client
         assert client.health_check() is False
 
     def test_health_check_sealed(self, mock_hvac_client):
