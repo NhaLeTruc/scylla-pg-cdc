@@ -97,8 +97,7 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
     reference_id UUID,
     notes TEXT,
     created_at TIMESTAMP
-) WITH cdc = {'enabled': true, 'preimage': false, 'postimage': true, 'ttl': 86400}
-AND CLUSTERING ORDER BY (transaction_id DESC);
+) WITH cdc = {'enabled': true, 'preimage': false, 'postimage': true, 'ttl': 86400};
 
 -- ============================================================================
 -- Monitoring and Metadata Tables
@@ -109,7 +108,7 @@ CREATE TABLE IF NOT EXISTS cdc_metadata (
     table_name TEXT PRIMARY KEY,
     last_processed_timestamp TIMESTAMP,
     last_processed_stream_id BLOB,
-    records_processed COUNTER
+    records_processed BIGINT
 );
 
 -- ============================================================================

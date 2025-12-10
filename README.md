@@ -72,7 +72,7 @@ cd scylla-pg-cdc
 # List docker services and their status
 docker ps --format "table {{.Names}}\t{{.Status}}"
 
-# Check all services are healthy
+# Check all services are healthy throughoutly
 ./scripts/health-check.sh
 
 # Check specific service (verbose mode)
@@ -94,7 +94,7 @@ docker compose -f docker/docker-compose.yml up
 docker compose -f docker/docker-compose.yml down -v --remove-orphans
 ```
 
-The setup script will:
+The './scripts/setup-local.sh' script will:
 - ✓ Check prerequisites (Docker, Docker Compose, disk space)
 - ✓ Create `.env` file from template
 - ✓ Pull and build Docker images
@@ -117,13 +117,13 @@ python3 -m venv .venv
 .venv/bin/pytest
 
 # Run contract tests
-.venv/bin/pytest -m contract
+.venv/bin/pytest tests/contract/ -v
 
 # Run unit tests only
-.venv/bin/pytest -m unit
+.venv/bin/pytest tests/unit/ -v
 
 # Run integration tests (requires Docker)
-.venv/bin/pytest -m integration
+.venv/bin/pytest tests/integration/ -v
 ```
 
 ### Live Test Data Replication
@@ -144,9 +144,7 @@ docker exec -it scylla cqlsh -e "
 # 3. Wait 30 seconds for initial replication
 
 # 4. Verify data arrived in PostgreSQL
-docker exec -it postgres psql -U postgres -d warehouse -c "
-  SELECT * FROM cdc_data.validation_summary ORDER BY category, status;
-"
+docker exec -it postgres psql -U postgres -d warehouse -c "SELECT category, metric, expected_value, actual_value FROM cdc_data.validation_summary;"
 
 # Check replication completeness
 docker exec -it postgres psql -U postgres -d warehouse -c "
@@ -199,6 +197,8 @@ docker exec -it postgres psql -U postgres -d warehouse -c "
 
 # Check connector status
 ./scripts/monitor-connectors.sh
+
+curl -s -X POST -H "Content-Type: application/json" --data @docker/kafka-connect/connectors/scylla-source.json http://localhost:8083/connectors 2>&1 | jq '.'
 ```
 
 ### Monitoring

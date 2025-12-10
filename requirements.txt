@@ -5,7 +5,8 @@ hvac>=2.1.0               # HashiCorp Vault client
 
 # Kafka ecosystem
 confluent-kafka>=2.3.0    # Kafka Python client
-avro-python3>=1.11.3      # Avro serialization
+kafka-python-ng>=2.2.0    # Kafka consumer/producer for testing (maintained fork of kafka-python)
+avro>=1.11.3              # Avro serialization (official package, replaces avro-python3)
 
 # Monitoring and observability
 prometheus-client>=0.19.0 # Prometheus metrics
