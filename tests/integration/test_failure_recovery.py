@@ -48,7 +48,7 @@ class TestFailureRecovery:
 
     def test_connector_status_after_restart(self, kafka_connect_url):
         """Test connector recovers to RUNNING state after restart."""
-        connector_name = "scylla-source"
+        connector_name = "scylla-cdc-source"
 
         # Get current status
         response = requests.get(f"{kafka_connect_url}/connectors/{connector_name}/status")
@@ -82,7 +82,7 @@ class TestFailureRecovery:
         time.sleep(5)
 
         # Restart sink connector
-        requests.post(f"{kafka_connect_url}/connectors/postgres-sink/restart")
+        requests.post(f"{kafka_connect_url}/connectors/postgres-jdbc-sink/restart")
         time.sleep(10)
 
         # Insert data after restart
@@ -108,7 +108,7 @@ class TestFailureRecovery:
 
     def test_offset_preservation(self, kafka_connect_url):
         """Test that offsets are preserved across restarts."""
-        connector_name = "scylla-source"
+        connector_name = "scylla-cdc-source"
 
         # Get current offsets (indirectly through status)
         response = requests.get(f"{kafka_connect_url}/connectors/{connector_name}/status")
@@ -130,7 +130,7 @@ class TestFailureRecovery:
 
     def test_automatic_task_rebalance(self, kafka_connect_url):
         """Test tasks rebalance when connector restarts."""
-        connector_name = "postgres-sink"
+        connector_name = "postgres-jdbc-sink"
 
         # Get initial task distribution
         response = requests.get(f"{kafka_connect_url}/connectors/{connector_name}/status")
@@ -157,7 +157,7 @@ class TestFailureRecovery:
 
     def test_error_tolerance_configuration(self, kafka_connect_url):
         """Test error tolerance is configured correctly."""
-        connector_name = "scylla-source"
+        connector_name = "scylla-cdc-source"
 
         # Get connector configuration
         response = requests.get(f"{kafka_connect_url}/connectors/{connector_name}/config")
@@ -175,7 +175,7 @@ class TestFailureRecovery:
     def test_dlq_configuration(self, kafka_connect_url):
         """Test Dead Letter Queue is properly configured."""
         # Check both connectors
-        for connector in ['scylla-source', 'postgres-sink']:
+        for connector in ['scylla-cdc-source', 'postgres-jdbc-sink']:
             response = requests.get(f"{kafka_connect_url}/connectors/{connector}/config")
             assert response.status_code == 200
             config = response.json()
@@ -187,7 +187,7 @@ class TestFailureRecovery:
 
     def test_connector_health_after_multiple_restarts(self, kafka_connect_url):
         """Test connector remains healthy after multiple restarts."""
-        connector_name = "scylla-source"
+        connector_name = "scylla-cdc-source"
 
         for i in range(3):
             # Restart connector
@@ -236,7 +236,7 @@ class TestFailureRecovery:
 
     def test_graceful_shutdown_recovery(self, kafka_connect_url):
         """Test graceful shutdown and recovery."""
-        connector_name = "postgres-sink"
+        connector_name = "postgres-jdbc-sink"
 
         # Pause connector (graceful shutdown)
         response = requests.put(f"{kafka_connect_url}/connectors/{connector_name}/pause")
@@ -263,7 +263,7 @@ class TestFailureRecovery:
     def test_connection_retry_mechanism(self, kafka_connect_url):
         """Test connection retry configuration."""
         # Check retry settings in connector configs
-        for connector in ['scylla-source', 'postgres-sink']:
+        for connector in ['scylla-cdc-source', 'postgres-jdbc-sink']:
             response = requests.get(f"{kafka_connect_url}/connectors/{connector}/config")
             if response.status_code == 200:
                 config = response.json()

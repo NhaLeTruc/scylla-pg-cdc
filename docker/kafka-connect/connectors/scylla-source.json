@@ -33,20 +33,10 @@
     "schema.history.internal.kafka.topic": "scylla-schema-history",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
 
-    "transforms": "addMetadata,route",
-    "transforms.addMetadata.type": "org.apache.kafka.connect.transforms.InsertField$Value",
-    "transforms.addMetadata.timestamp.field": "cdc_timestamp",
-    "transforms.addMetadata.static.field": "cdc_source",
-    "transforms.addMetadata.static.value": "scylla-cdc",
-
-    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.route.regex": "cdc\\.scylla\\.app_data\\.(.*)",
-    "transforms.route.replacement": "cdc.scylla.$1",
-
     "errors.tolerance": "all",
     "errors.log.enable": true,
     "errors.log.include.messages": true,
-    "errors.deadletterqueue.topic.name": "dlq-scylla-source",
+    "errors.deadletterqueue.topic.name": "dlq-scylla-cdc-source",
     "errors.deadletterqueue.topic.replication.factor": 1,
     "errors.deadletterqueue.context.headers.enable": true,
 
