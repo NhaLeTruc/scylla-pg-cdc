@@ -11,6 +11,7 @@ from cassandra.cluster import Cluster
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import requests
+from tests.conftest import wait_for_data_in_postgres
 
 
 def check_connector_running(url):
@@ -77,7 +78,7 @@ class TestPostgresSinkContract:
         columns = cursor.fetchall()
         assert len(columns) > 0, "Users table not created by sink"
 
-        # Verify key columns exist
+        # Verify key columns exist (with _value suffix from Flatten transform)
         column_names = [col['column_name'] for col in columns]
         assert 'user_id' in column_names
         assert 'username_value' in column_names
@@ -96,19 +97,14 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (user_id, username, 'upsert@test.com', 'Test', 'User', 'pending'))
 
-        time.sleep(30)
-
-        # Verify INSERT
-        cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT status_value as status
-            FROM cdc_data.users
-            WHERE user_id = %s
-        """, (str(user_id),))
-
-        result = cursor.fetchone()
-        assert result is not None
-        assert result['status'] == 'pending'
+        # Wait for INSERT to replicate with retry logic
+        result = wait_for_data_in_postgres(
+            "SELECT status_value as status FROM cdc_data.users WHERE user_id = %s",
+            (str(user_id),),
+            timeout=90
+        )
+        assert result is not None, f"INSERT not replicated for user_id={user_id}"
+        assert result[0] == 'pending', f"Expected status 'pending', got '{result[0]}'"
 
         # UPDATE same record
         scylla_session.execute("""
@@ -117,19 +113,22 @@ class TestPostgresSinkContract:
             WHERE user_id = %s
         """, ('active', user_id))
 
-        time.sleep(30)
+        # Wait for UPDATE to replicate with retry logic
+        # Note: We need to wait for the specific value to appear, not just any data
+        result = wait_for_data_in_postgres(
+            "SELECT status_value as status FROM cdc_data.users WHERE user_id = %s AND status_value = %s",
+            (str(user_id), 'active'),
+            timeout=90
+        )
+        assert result is not None, f"UPDATE not replicated for user_id={user_id}"
+        assert result[0] == 'active', f"UPSERT didn't update existing record: status={result[0]}"
 
-        # Verify UPDATE (should be single record with updated status)
-        cursor.execute("""
-            SELECT COUNT(*), MAX(status_value) as status
-            FROM cdc_data.users
-            WHERE user_id = %s
-        """, (str(user_id),))
-
-        result = cursor.fetchone()
-        assert result['count'] == 1, "UPSERT created duplicate instead of updating"
-        assert result['status'] == 'active', "UPSERT didn't update existing record"
+        # Verify no duplicates exist
+        cursor = postgres_conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM cdc_data.users WHERE user_id = %s", (str(user_id),))
+        count = cursor.fetchone()[0]
         cursor.close()
+        assert count == 1, f"UPSERT created duplicate instead of updating: count={count}"
 
     @requires_connectors
     def test_sink_preserves_data_types(self, scylla_session, postgres_conn):
@@ -141,35 +140,31 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (product_id, 'Type Test Product', 'Description', 99.99, 100, 'Test', True))
 
-        time.sleep(30)
-
-        # Verify data types
-        cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT product_id, name_value as name, price_value as price,
-                   stock_quantity_value as stock_quantity, is_active_value as is_active,
+        # Wait for INSERT to replicate with retry logic
+        result = wait_for_data_in_postgres(
+            """SELECT product_id, name_value as name, price_value as price, stock_quantity_value as stock_quantity, is_active_value as is_active,
                    pg_typeof(product_id) as id_type,
                    pg_typeof(price_value) as price_type,
                    pg_typeof(stock_quantity_value) as qty_type,
                    pg_typeof(is_active_value) as bool_type
             FROM cdc_data.products
-            WHERE product_id = %s
-        """, (str(product_id),))
+            WHERE product_id = %s""",
+            (str(product_id),),
+            timeout=90
+        )
+        assert result is not None, f"INSERT not replicated for product_id={product_id}"
 
-        result = cursor.fetchone()
-        assert result is not None
-
-        # Verify types
-        assert result['id_type'] in ('uuid', 'text'), f"Expected uuid or text, got {result['id_type']}"
-        assert result['price_type'] in ('numeric', 'decimal', 'double precision', 'text')
-        assert result['qty_type'] in ('integer', 'bigint')
-        assert result['bool_type'] == 'boolean'
+        # Verify types (result is a tuple)
+        product_id_val, name, price, stock_quantity, is_active, id_type, price_type, qty_type, bool_type = result
+        assert id_type in ('uuid', 'text'), f"Expected uuid or text, got {id_type}"
+        assert price_type in ('numeric', 'decimal', 'double precision', 'text')
+        assert qty_type in ('integer', 'bigint')
+        assert bool_type == 'boolean'
 
         # Verify values
-        assert float(result['price']) == 99.99
-        assert result['stock_quantity'] == 100
-        assert result['is_active'] is True
-        cursor.close()
+        assert float(price) == 99.99
+        assert stock_quantity == 100
+        assert is_active is True
 
     @requires_connectors
     def test_sink_handles_null_values(self, scylla_session, postgres_conn):
@@ -182,20 +177,14 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (product_id, 'NULL Test', None, 10.00, 0, 'Test', True))
 
-        time.sleep(30)
-
-        # Verify NULL is preserved
-        cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT description_value as description
-            FROM cdc_data.products
-            WHERE product_id = %s
-        """, (str(product_id),))
-
-        result = cursor.fetchone()
-        assert result is not None
-        assert result['description'] is None, "NULL value not preserved"
-        cursor.close()
+        # Wait for INSERT to replicate with retry logic
+        result = wait_for_data_in_postgres(
+            "SELECT description_value as description FROM cdc_data.products WHERE product_id = %s",
+            (str(product_id),),
+            timeout=90
+        )
+        assert result is not None, f"INSERT not replicated for product_id={product_id}"
+        assert result[0] is None, "NULL value not preserved"
 
     @requires_connectors
     def test_sink_batch_processing(self, scylla_session, postgres_conn):
@@ -211,20 +200,16 @@ class TestPostgresSinkContract:
                 VALUES (%s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
             """, (user_id, f'batch_user_{i}', f'batch{i}@test.com', 'Batch', f'User{i}', 'active'))
 
-        time.sleep(30)
-
-        # Verify all batched records arrived
-        cursor = postgres_conn.cursor()
+        # Wait for all records to replicate with retry logic
         placeholders = ','.join(['%s'] * len(user_ids))
-        cursor.execute(f"""
-            SELECT COUNT(*)
-            FROM cdc_data.users
-            WHERE user_id::text IN ({placeholders})
-        """, [str(uid) for uid in user_ids])
-
-        count = cursor.fetchone()[0]
+        result = wait_for_data_in_postgres(
+            f"SELECT COUNT(*) FROM cdc_data.users WHERE user_id::text IN ({placeholders})",
+            [str(uid) for uid in user_ids],
+            timeout=90
+        )
+        assert result is not None, "Batch INSERT not replicated"
+        count = result[0]
         assert count == 10, f"Batch processing failed: expected 10, got {count}"
-        cursor.close()
 
     @requires_connectors
     def test_sink_connector_configuration(self, kafka_connect_url):
@@ -258,20 +243,14 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (user_id, f'special_{uuid.uuid4().hex[:8]}', 'special@test.com', special_name, 'User', 'active'))
 
-        time.sleep(30)
-
-        # Verify special characters preserved
-        cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT first_name_value as first_name
-            FROM cdc_data.users
-            WHERE user_id = %s
-        """, (str(user_id),))
-
-        result = cursor.fetchone()
-        assert result is not None
-        assert result['first_name'] == special_name, "Special characters not preserved"
-        cursor.close()
+        # Wait for INSERT to replicate with retry logic
+        result = wait_for_data_in_postgres(
+            "SELECT first_name_value as first_name FROM cdc_data.users WHERE user_id = %s",
+            (str(user_id),),
+            timeout=90
+        )
+        assert result is not None, f"INSERT not replicated for user_id={user_id}"
+        assert result[0] == special_name, f"Special characters not preserved: expected '{special_name}', got '{result[0]}'"
 
     @requires_connectors
     def test_sink_referential_integrity(self, scylla_session, postgres_conn):
@@ -285,7 +264,13 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, %s, %s, %s, toTimestamp(now()), toTimestamp(now()), %s)
         """, (user_id, f'ref_user_{uuid.uuid4().hex[:8]}', 'ref@test.com', 'Ref', 'User', 'active'))
 
-        time.sleep(20)
+        # Wait for user to replicate
+        user_result = wait_for_data_in_postgres(
+            "SELECT user_id FROM cdc_data.users WHERE user_id = %s",
+            (str(user_id),),
+            timeout=90
+        )
+        assert user_result is not None, f"User INSERT not replicated for user_id={user_id}"
 
         # Insert order referencing user
         scylla_session.execute("""
@@ -293,21 +278,17 @@ class TestPostgresSinkContract:
             VALUES (%s, %s, toTimestamp(now()), %s, %s, %s, toTimestamp(now()), toTimestamp(now()))
         """, (order_id, user_id, 100.00, 'pending', '123 Test St'))
 
-        time.sleep(30)
-
-        # Verify referential integrity maintained
-        cursor = postgres_conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT o.order_id, o.user_id_value as user_id, u.username_value as username
+        # Wait for order to replicate and verify referential integrity with retry logic
+        result = wait_for_data_in_postgres(
+            """SELECT o.order_id, o.user_id_value as user_id, u.username_value as username
             FROM cdc_data.orders o
-            JOIN cdc_data.users u ON o.user_id_value = u.user_id
-            WHERE o.order_id = %s
-        """, (str(order_id),))
-
-        result = cursor.fetchone()
-        assert result is not None, "Referential integrity broken"
-        assert result['user_id'] == str(user_id)
-        cursor.close()
+            JOIN cdc_data.users u ON o.user_id_value::uuid = u.user_id
+            WHERE o.order_id = %s""",
+            (str(order_id),),
+            timeout=90
+        )
+        assert result is not None, f"Order INSERT not replicated or referential integrity broken for order_id={order_id}"
+        assert result[1] == str(user_id), f"Expected user_id={user_id}, got {result[1]}"
 
     @requires_connectors
     def test_sink_error_handling_configuration(self, kafka_connect_url):

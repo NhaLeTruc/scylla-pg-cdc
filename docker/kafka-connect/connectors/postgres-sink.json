@@ -28,17 +28,18 @@
 
     "db.timezone": "UTC",
 
-    "batch.size": 1000,
+    "batch.size": 3000,
     "max.retries": 10,
-    "retry.backoff.ms": 3000,
+    "retry.backoff.ms": 1000,
 
-    "poll.interval.ms": 100,
+    "poll.interval.ms": 50,
 
     "transforms": "unwrap,flatten,extractTable",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,source.ts_ms",
 
     "transforms.flatten.type": "org.apache.kafka.connect.transforms.Flatten$Value",
     "transforms.flatten.delimiter": "_",
