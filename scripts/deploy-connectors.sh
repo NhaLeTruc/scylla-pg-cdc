@@ -92,6 +92,27 @@ wait_for_kafka_connect() {
     exit 1
 }
 
+check_scylla_schema() {
+    log_info "Checking if Scylla schema is initialized..."
+
+    # Check if app_data keyspace exists
+    if docker exec scylla cqlsh -e "DESCRIBE KEYSPACE app_data;" &> /dev/null; then
+        log_success "Scylla schema is initialized"
+        return 0
+    else
+        log_warn "Scylla schema not found. Initializing..."
+
+        # Initialize the schema
+        if docker exec scylla cqlsh -f /docker-entrypoint-initdb.d/init.cql 2>&1 | grep -q "Warnings :"; then
+            log_success "Scylla schema initialized successfully"
+            return 0
+        else
+            log_error "Failed to initialize Scylla schema"
+            return 1
+        fi
+    fi
+}
+
 check_connector_exists() {
     local connector_name=$1
     curl -sf "${KAFKA_CONNECT_URL}/connectors/${connector_name}" > /dev/null 2>&1
@@ -196,6 +217,9 @@ show_connector_status() {
     local connector_name=$1
 
     log_info "Fetching status for connector: ${connector_name}"
+
+    # Wait a moment for connector to fully initialize
+    sleep 2
 
     response=$(curl -sf "${KAFKA_CONNECT_URL}/connectors/${connector_name}/status" 2>&1)
 
@@ -314,6 +338,9 @@ fi
 EXIT_CODE=0
 
 if [ "$DEPLOY_SOURCE" = true ]; then
+    # Check and initialize Scylla schema if needed
+    check_scylla_schema || EXIT_CODE=1
+
     log_info "Processing Scylla CDC source connector..."
 
     if check_connector_exists "$SOURCE_CONNECTOR_NAME"; then
