@@ -34,11 +34,14 @@
 
     "poll.interval.ms": 50,
 
-    "transforms": "unwrap,extractTable",
+    "transforms": "unwrap,flatten,extractTable",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "rewrite",
+
+    "transforms.flatten.type": "org.apache.kafka.connect.transforms.Flatten$Value",
+    "transforms.flatten.delimiter": "_",
 
     "transforms.extractTable.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.extractTable.regex": "scylla-cluster\\.app_data\\.(.*)",

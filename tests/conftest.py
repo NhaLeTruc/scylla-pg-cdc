@@ -186,7 +186,7 @@ def wait_for_data_in_postgres(query, params=None, timeout=90, poll_interval=3):
             result = cursor.fetchone()
             cursor.close()
 
-            if result is not None and result != (0,) and result != (None,):
+            if result is not None and result != (0,):
                 return result
 
             time.sleep(poll_interval)

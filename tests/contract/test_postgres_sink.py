@@ -282,7 +282,7 @@ class TestPostgresSinkContract:
         result = wait_for_data_in_postgres(
             """SELECT o.order_id, o.user_id_value as user_id, u.username_value as username
             FROM cdc_data.orders o
-            JOIN cdc_data.users u ON o.user_id_value::uuid = u.user_id
+            JOIN cdc_data.users u ON o.user_id_value::text = u.user_id::text
             WHERE o.order_id = %s""",
             (str(order_id),),
             timeout=90
