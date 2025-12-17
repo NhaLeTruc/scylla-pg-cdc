@@ -18,14 +18,16 @@ SET search_path TO cdc_data, public;
 -- Users dimension table
 CREATE TABLE IF NOT EXISTS cdc_data.users (
     user_id UUID PRIMARY KEY,
-    username VARCHAR(255),
-    email VARCHAR(255) UNIQUE,
-    first_name VARCHAR(255),
-    last_name VARCHAR(255),
+    username TEXT,
+    email TEXT UNIQUE,
+    first_name TEXT,
+    last_name TEXT,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    status VARCHAR(50),
+    status TEXT,
     metadata JSONB,
+    -- JDBC Sink connector deletion tracking
+    __deleted TEXT,
     -- Metadata columns for CDC tracking
     cdc_operation VARCHAR(10),
     cdc_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -43,15 +45,17 @@ CREATE INDEX IF NOT EXISTS idx_users_cdc_timestamp ON cdc_data.users(cdc_timesta
 CREATE TABLE IF NOT EXISTS cdc_data.orders (
     order_id UUID PRIMARY KEY,
     user_id UUID,
-    order_number VARCHAR(100),
+    order_number TEXT,
     order_date TIMESTAMP,
     total_amount NUMERIC(12, 2),
-    currency VARCHAR(3),
-    status VARCHAR(50),
+    currency TEXT,
+    status TEXT,
     shipping_address TEXT,
     billing_address TEXT,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
+    -- JDBC Sink connector deletion tracking
+    __deleted TEXT,
     -- CDC metadata
     cdc_operation VARCHAR(10),
     cdc_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -72,11 +76,13 @@ CREATE TABLE IF NOT EXISTS cdc_data.order_items (
     order_id UUID,
     item_id UUID,
     product_id UUID,
-    product_name VARCHAR(500),
+    product_name TEXT,
     quantity INTEGER,
     unit_price NUMERIC(12, 2),
     total_price NUMERIC(12, 2),
     created_at TIMESTAMP,
+    -- JDBC Sink connector deletion tracking
+    __deleted TEXT,
     -- CDC metadata
     cdc_operation VARCHAR(10),
     cdc_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -93,17 +99,19 @@ CREATE INDEX IF NOT EXISTS idx_order_items_cdc_timestamp ON cdc_data.order_items
 -- Products dimension table
 CREATE TABLE IF NOT EXISTS cdc_data.products (
     product_id UUID PRIMARY KEY,
-    sku VARCHAR(100) UNIQUE,
-    name VARCHAR(500),
+    sku TEXT UNIQUE,
+    name TEXT,
     description TEXT,
-    category VARCHAR(255),
+    category TEXT,
     price NUMERIC(12, 2),
-    currency VARCHAR(3),
+    currency TEXT,
     stock_quantity INTEGER,
     is_active BOOLEAN,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     attributes JSONB,
+    -- JDBC Sink connector deletion tracking
+    __deleted TEXT,
     -- CDC metadata
     cdc_operation VARCHAR(10),
     cdc_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -121,13 +129,15 @@ CREATE INDEX IF NOT EXISTS idx_products_cdc_timestamp ON cdc_data.products(cdc_t
 CREATE TABLE IF NOT EXISTS cdc_data.inventory_transactions (
     transaction_id UUID PRIMARY KEY,
     product_id UUID,
-    transaction_type VARCHAR(50),
+    transaction_type TEXT,
     quantity_change INTEGER,
     previous_quantity INTEGER,
     new_quantity INTEGER,
     reference_id UUID,
     notes TEXT,
     created_at TIMESTAMP,
+    -- JDBC Sink connector deletion tracking
+    __deleted TEXT,
     -- CDC metadata
     cdc_operation VARCHAR(10),
     cdc_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

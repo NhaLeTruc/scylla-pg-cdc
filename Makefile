@@ -41,7 +41,7 @@ restart: stop start ## Restart all Docker services
 
 clean: ## Stop services and remove volumes (data will be lost)
 	@echo "$(RED)WARNING: This will delete all data!$(NC)"
-	@./scripts/teardown-local.sh
+	@./scripts/teardown-local.sh -f
 
 clean-keep-volumes: ## Stop services but keep data volumes
 	@echo "$(YELLOW)Stopping services (keeping data)...$(NC)"
@@ -82,7 +82,7 @@ test-integration: install-deps cleanup-full ## Run integration tests with fresh 
 
 test-replication: ## Quick test CDC replication (INSERT/UPDATE/DELETE)
 	@echo "$(BLUE)Testing CDC replication...$(NC)"
-	@./scripts/test-replication.sh --table users --wait 30
+	@./scripts/test-replication.sh --table users --wait 60
 
 check-replication: ## Verify CDC replication status and data completeness
 	@echo "$(BLUE)Checking replication status...$(NC)"
