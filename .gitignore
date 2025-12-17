@@ -79,3 +79,7 @@ secrets/
 *.key
 *.crt
 *.pem
+
+# Generated connector configs (keep templates only)
+docker/kafka-connect/connectors/scylla-source.json
+docker/kafka-connect/connectors/postgres-sink.json

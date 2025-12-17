@@ -1,0 +1,58 @@
+{
+  "name": "${SOURCE_CONNECTOR_NAME}",
+  "config": {
+    "connector.class": "com.scylladb.cdc.debezium.connector.ScyllaConnector",
+    "tasks.max": "4",
+
+    "scylla.cluster.ip.addresses": "${SCYLLA_HOSTS}",
+    "scylla.name": "${CDC_SCYLLA_CLUSTER_NAME}",
+    "scylla.table.names": "app_data.users,app_data.orders,app_data.order_items,app_data.products,app_data.inventory_transactions",
+
+    "scylla.user": "${file:/vault/secrets/scylla-credentials:username}",
+    "scylla.password": "${file:/vault/secrets/scylla-credentials:password}",
+
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "${SCHEMA_REGISTRY_URL}",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "${SCHEMA_REGISTRY_URL}",
+
+    "topic.prefix": "${CDC_TOPIC_PREFIX}",
+    "topic.creation.default.replication.factor": ${KAFKA_REPLICATION_FACTOR},
+    "topic.creation.default.partitions": ${KAFKA_NUM_PARTITIONS},
+    "topic.creation.default.cleanup.policy": "delete",
+    "topic.creation.default.retention.ms": ${KAFKA_RETENTION_MS},
+    "topic.creation.default.compression.type": "snappy",
+
+    "snapshot.mode": "initial",
+    "snapshot.consistency.mode": "all_tables",
+
+    "poll.interval.ms": 1000,
+    "max.batch.size": 2048,
+    "max.queue.size": 8192,
+
+    "schema.history.internal.kafka.topic": "${CDC_SCHEMA_HISTORY_TOPIC}",
+    "schema.history.internal.kafka.bootstrap.servers": "${KAFKA_BROKERS}",
+
+    "errors.tolerance": "all",
+    "errors.log.enable": true,
+    "errors.log.include.messages": true,
+    "errors.deadletterqueue.topic.name": "${CDC_SOURCE_DLQ_TOPIC}",
+    "errors.deadletterqueue.topic.replication.factor": ${KAFKA_REPLICATION_FACTOR},
+    "errors.deadletterqueue.context.headers.enable": true,
+
+    "heartbeat.interval.ms": 30000,
+    "heartbeat.topics.prefix": "${CDC_HEARTBEAT_TOPIC_PREFIX}",
+
+    "producer.override.compression.type": "snappy",
+    "producer.override.enable.idempotence": true,
+    "producer.override.acks": "all",
+    "producer.override.max.in.flight.requests.per.connection": 1,
+    "producer.override.retries": 2147483647,
+    "producer.override.delivery.timeout.ms": 120000,
+    "producer.override.request.timeout.ms": 30000,
+
+    "predicates": "isHeartbeat",
+    "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isHeartbeat.pattern": "heartbeat.*"
+  }
+}

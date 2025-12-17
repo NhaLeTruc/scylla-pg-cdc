@@ -126,11 +126,7 @@ test_users_table() {
 
     # Insert test data in ScyllaDB
     log_info "Step 1/3: Inserting test user in ScyllaDB..."
-    docker exec scylla cqlsh -e "
-        USE app_data;
-        INSERT INTO users (user_id, username, email, first_name, last_name, created_at, updated_at, status)
-        VALUES (uuid(), '${test_username}', '${test_email}', 'Test', 'User', toTimestamp(now()), toTimestamp(now()), 'active');
-    " &>/dev/null
+    docker exec scylla cqlsh -e "USE app_data; INSERT INTO users (user_id, username, email, first_name, last_name, created_at, updated_at, status) VALUES (uuid(), '${test_username}', '${test_email}', 'Test', 'User', toTimestamp(now()), toTimestamp(now()), 'active');" &>/dev/null
 
     if [ $? -eq 0 ]; then
         log_success "Test user inserted in ScyllaDB"
@@ -142,10 +138,7 @@ test_users_table() {
     # Verify in ScyllaDB
     log_verbose "Verifying in ScyllaDB..."
     local scylla_count
-    scylla_count=$(docker exec scylla cqlsh -e "
-        USE app_data;
-        SELECT COUNT(*) FROM users WHERE email = '${test_email}';
-    " 2>/dev/null | grep -E "^\s*[0-9]+" | tr -d ' ' || echo "0")
+    scylla_count=$(docker exec scylla cqlsh -e "USE app_data; SELECT COUNT(*) FROM users WHERE email = '${test_email}';" 2>/dev/null | grep -E "^\s*[0-9]+" | tr -d ' ' || echo "0")
 
     log_verbose "ScyllaDB count: $scylla_count"
 
@@ -156,11 +149,7 @@ test_users_table() {
     # Verify in PostgreSQL
     log_info "Step 3/3: Verifying replication in PostgreSQL..."
     local pg_result
-    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "
-        SELECT username, email, first_name, last_name, status
-        FROM cdc_data.users
-        WHERE email = '${test_email}';
-    " 2>/dev/null)
+    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "SELECT username, email, first_name, last_name, status FROM cdc_data.users WHERE email = '${test_email}';" 2>/dev/null)
 
     if [ -n "$pg_result" ] && [ "$pg_result" != " " ]; then
         log_success "Test user replicated to PostgreSQL!"
@@ -171,13 +160,8 @@ test_users_table() {
         # Cleanup if requested
         if [ "$CLEANUP" = true ]; then
             log_verbose "Cleaning up test data..."
-            docker exec postgres psql -U postgres -d warehouse -c "
-                DELETE FROM cdc_data.users WHERE email = '${test_email}';
-            " &>/dev/null
-            docker exec scylla cqlsh -e "
-                USE app_data;
-                DELETE FROM users WHERE email = '${test_email}';
-            " &>/dev/null
+            docker exec postgres psql -U postgres -d warehouse -c "DELETE FROM cdc_data.users WHERE email = '${test_email}';" &>/dev/null || true
+            docker exec scylla cqlsh -e "USE app_data; DELETE FROM users WHERE email = '${test_email}' ALLOW FILTERING;" &>/dev/null || true
             log_verbose "Test data cleaned up"
         fi
 
@@ -198,11 +182,7 @@ test_products_table() {
 
     # Insert test data in ScyllaDB
     log_info "Step 1/3: Inserting test product in ScyllaDB..."
-    docker exec scylla cqlsh -e "
-        USE app_data;
-        INSERT INTO products (product_id, sku, name, description, category, price, currency, stock_quantity, is_active, created_at, updated_at)
-        VALUES (uuid(), '${test_sku}', 'Test Product', 'Test Description', 'Test', 9.99, 'USD', 100, true, toTimestamp(now()), toTimestamp(now()));
-    " &>/dev/null
+    docker exec scylla cqlsh -e "USE app_data; INSERT INTO products (product_id, sku, name, description, category, price, currency, stock_quantity, is_active, created_at, updated_at) VALUES (uuid(), '${test_sku}', 'Test Product', 'Test Description', 'Test', 9.99, 'USD', 100, true, toTimestamp(now()), toTimestamp(now()));" &>/dev/null
 
     if [ $? -eq 0 ]; then
         log_success "Test product inserted in ScyllaDB"
@@ -218,11 +198,7 @@ test_products_table() {
     # Verify in PostgreSQL
     log_info "Step 3/3: Verifying replication in PostgreSQL..."
     local pg_result
-    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "
-        SELECT sku, name, category, price
-        FROM cdc_data.products
-        WHERE sku = '${test_sku}';
-    " 2>/dev/null)
+    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "SELECT sku, name, category, price FROM cdc_data.products WHERE sku = '${test_sku}';" 2>/dev/null)
 
     if [ -n "$pg_result" ] && [ "$pg_result" != " " ]; then
         log_success "Test product replicated to PostgreSQL!"
@@ -233,13 +209,8 @@ test_products_table() {
         # Cleanup if requested
         if [ "$CLEANUP" = true ]; then
             log_verbose "Cleaning up test data..."
-            docker exec postgres psql -U postgres -d warehouse -c "
-                DELETE FROM cdc_data.products WHERE sku = '${test_sku}';
-            " &>/dev/null
-            docker exec scylla cqlsh -e "
-                USE app_data;
-                DELETE FROM products WHERE sku = '${test_sku}';
-            " &>/dev/null
+            docker exec postgres psql -U postgres -d warehouse -c "DELETE FROM cdc_data.products WHERE sku = '${test_sku}';" &>/dev/null || true
+            docker exec scylla cqlsh -e "USE app_data; DELETE FROM products WHERE sku = '${test_sku}' ALLOW FILTERING;" &>/dev/null || true
             log_verbose "Test data cleaned up"
         fi
 
@@ -256,10 +227,7 @@ test_orders_table() {
 
     # First, we need a user ID to create an order
     local user_id
-    user_id=$(docker exec scylla cqlsh -e "
-        USE app_data;
-        SELECT user_id FROM users LIMIT 1;
-    " 2>/dev/null | grep -E "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | head -n1 | tr -d ' ')
+    user_id=$(docker exec scylla cqlsh -e "USE app_data; SELECT user_id FROM users LIMIT 1;" 2>/dev/null | grep -E "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | head -n1 | tr -d ' ')
 
     if [ -z "$user_id" ]; then
         log_warning "No users found in ScyllaDB, cannot test orders table"
@@ -272,11 +240,7 @@ test_orders_table() {
 
     # Insert test data in ScyllaDB
     log_info "Step 1/3: Inserting test order in ScyllaDB..."
-    docker exec scylla cqlsh -e "
-        USE app_data;
-        INSERT INTO orders (order_id, user_id, order_number, order_date, total_amount, currency, status, created_at, updated_at)
-        VALUES (uuid(), ${user_id}, '${test_order_num}', toTimestamp(now()), 99.99, 'USD', 'pending', toTimestamp(now()), toTimestamp(now()));
-    " &>/dev/null
+    docker exec scylla cqlsh -e "USE app_data; INSERT INTO orders (order_id, user_id, order_number, order_date, total_amount, currency, status, created_at, updated_at) VALUES (uuid(), ${user_id}, '${test_order_num}', toTimestamp(now()), 99.99, 'USD', 'pending', toTimestamp(now()), toTimestamp(now()));" &>/dev/null
 
     if [ $? -eq 0 ]; then
         log_success "Test order inserted in ScyllaDB"
@@ -292,11 +256,7 @@ test_orders_table() {
     # Verify in PostgreSQL
     log_info "Step 3/3: Verifying replication in PostgreSQL..."
     local pg_result
-    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "
-        SELECT order_number, status, total_amount
-        FROM cdc_data.orders
-        WHERE order_number = '${test_order_num}';
-    " 2>/dev/null)
+    pg_result=$(docker exec postgres psql -U postgres -d warehouse -t -c "SELECT order_number, status, total_amount FROM cdc_data.orders WHERE order_number = '${test_order_num}';" 2>/dev/null)
 
     if [ -n "$pg_result" ] && [ "$pg_result" != " " ]; then
         log_success "Test order replicated to PostgreSQL!"
@@ -307,13 +267,8 @@ test_orders_table() {
         # Cleanup if requested
         if [ "$CLEANUP" = true ]; then
             log_verbose "Cleaning up test data..."
-            docker exec postgres psql -U postgres -d warehouse -c "
-                DELETE FROM cdc_data.orders WHERE order_number = '${test_order_num}';
-            " &>/dev/null
-            docker exec scylla cqlsh -e "
-                USE app_data;
-                DELETE FROM orders WHERE order_number = '${test_order_num}';
-            " &>/dev/null
+            docker exec postgres psql -U postgres -d warehouse -c "DELETE FROM cdc_data.orders WHERE order_number = '${test_order_num}';" &>/dev/null || true
+            docker exec scylla cqlsh -e "USE app_data; DELETE FROM orders WHERE order_number = '${test_order_num}' ALLOW FILTERING;" &>/dev/null || true
             log_verbose "Test data cleaned up"
         fi
 
@@ -397,23 +352,23 @@ for ((i=1; i<=TEST_ITERATIONS; i++)); do
     case "$TABLE" in
         users)
             if test_users_table "$test_id"; then
-                ((passed++))
+                passed=$((passed + 1))
             else
-                ((failed++))
+                failed=$((failed + 1))
             fi
             ;;
         products)
             if test_products_table "$test_id"; then
-                ((passed++))
+                passed=$((passed + 1))
             else
-                ((failed++))
+                failed=$((failed + 1))
             fi
             ;;
         orders)
             if test_orders_table "$test_id"; then
-                ((passed++))
+                passed=$((passed + 1))
             else
-                ((failed++))
+                failed=$((failed + 1))
             fi
             ;;
         *)

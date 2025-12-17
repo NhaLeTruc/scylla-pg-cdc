@@ -170,6 +170,7 @@ services:
       --api-address 0.0.0.0
       --developer-mode 1
       --experimental-features cdc
+      --logger-log-level cdc=trace
     environment:
       - SCYLLA_CLUSTER_NAME=cdc-cluster
     volumes:

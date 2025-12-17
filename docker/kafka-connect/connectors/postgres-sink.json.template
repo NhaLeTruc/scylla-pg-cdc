@@ -1,21 +1,21 @@
 {
-  "name": "postgres-jdbc-sink",
+  "name": "${SINK_CONNECTOR_NAME}",
   "config": {
     "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
-    "tasks.max": "4",
+    "tasks.max": "${CONNECTOR_TASKS_MAX}",
 
-    "topics.regex": "scylla-cluster\\.app_data\\.(users|orders|order_items|products|inventory_transactions)",
+    "topics.regex": "${SINK_TOPICS_REGEX}",
 
-    "connection.url": "jdbc:postgresql://postgres:5432/warehouse",
-    "connection.user": "postgres",
-    "connection.password": "postgres",
+    "connection.url": "jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}",
+    "connection.user": "${POSTGRES_USER}",
+    "connection.password": "${POSTGRES_PASSWORD}",
     "connection.attempts": 10,
     "connection.backoff.ms": 3000,
 
     "key.converter": "io.confluent.connect.avro.AvroConverter",
-    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "key.converter.schema.registry.url": "${SCHEMA_REGISTRY_URL}",
     "value.converter": "io.confluent.connect.avro.AvroConverter",
-    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter.schema.registry.url": "${SCHEMA_REGISTRY_URL}",
 
     "auto.create": false,
     "auto.evolve": false,
@@ -28,9 +28,9 @@
 
     "db.timezone": "UTC",
 
-    "batch.size": 3000,
-    "max.retries": 10,
-    "retry.backoff.ms": 3000,
+    "batch.size": ${SINK_BATCH_SIZE},
+    "max.retries": ${MAX_RETRIES},
+    "retry.backoff.ms": ${RETRY_BACKOFF_MS},
 
     "poll.interval.ms": 50,
 
@@ -65,14 +65,14 @@
     "transforms.renameUpdatedAt.renames": "updated_at_value:updated_at",
 
     "transforms.extractTable.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.extractTable.regex": "scylla-cluster\\.app_data\\.(.*)",
+    "transforms.extractTable.regex": "${CDC_SCYLLA_CLUSTER_NAME}\\.app_data\\.(.*)",
     "transforms.extractTable.replacement": "$1",
 
     "errors.tolerance": "all",
     "errors.log.enable": true,
     "errors.log.include.messages": true,
-    "errors.deadletterqueue.topic.name": "dlq-postgres-sink",
-    "errors.deadletterqueue.topic.replication.factor": 1,
+    "errors.deadletterqueue.topic.name": "${SINK_DLQ_TOPIC}",
+    "errors.deadletterqueue.topic.replication.factor": ${KAFKA_REPLICATION_FACTOR},
     "errors.deadletterqueue.context.headers.enable": true,
 
     "consumer.override.isolation.level": "read_committed",
@@ -88,8 +88,6 @@
     "predicates.isTombstone.type": "org.apache.kafka.connect.transforms.predicates.RecordIsTombstone",
 
     "dialect.name": "PostgreSqlDatabaseDialect",
-    "quote.sql.identifiers": "ALWAYS",
-
-    "db.sqlTypeMapping": "uuid:UUID"
+    "quote.sql.identifiers": "ALWAYS"
   }
 }

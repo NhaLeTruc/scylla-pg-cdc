@@ -24,15 +24,28 @@
 
 set -euo pipefail
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Load environment variables from .env file
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    set -a
+    source <(grep -v '^#' "${PROJECT_ROOT}/.env" | grep -v '^$' | sed 's/\r$//')
+    set +a
+else
+    echo "Warning: .env file not found at ${PROJECT_ROOT}/.env"
+fi
+
 # Configuration
 KAFKA_CONNECT_HOST="${KAFKA_CONNECT_HOST:-localhost}"
 KAFKA_CONNECT_PORT="${KAFKA_CONNECT_PORT:-8083}"
 KAFKA_CONNECT_URL="http://${KAFKA_CONNECT_HOST}:${KAFKA_CONNECT_PORT}"
 CONNECTOR_CONFIG_DIR="${CONNECTOR_CONFIG_DIR:-docker/kafka-connect/connectors}"
 
-# Connector names
-SOURCE_CONNECTOR_NAME="scylla-cdc-source"
-SINK_CONNECTOR_NAME="postgres-jdbc-sink"
+# Connector names (loaded from .env or use defaults)
+SOURCE_CONNECTOR_NAME="${SOURCE_CONNECTOR_NAME:-scylla-cdc-source}"
+SINK_CONNECTOR_NAME="${SINK_CONNECTOR_NAME:-postgres-jdbc-sink}"
 
 # Script options
 DEPLOY_SOURCE=true
@@ -111,6 +124,41 @@ check_scylla_schema() {
             return 1
         fi
     fi
+}
+
+process_connector_templates() {
+    log_info "Processing connector configuration templates..."
+
+    local template_processor="${SCRIPT_DIR}/process-connector-config.sh"
+
+    if [ ! -f "$template_processor" ]; then
+        log_error "Template processor not found: $template_processor"
+        return 1
+    fi
+
+    # Process source connector template
+    if [ -f "${CONNECTOR_CONFIG_DIR}/scylla-source.json.template" ]; then
+        bash "$template_processor" \
+            --template "${CONNECTOR_CONFIG_DIR}/scylla-source.json.template" \
+            --output "${CONNECTOR_CONFIG_DIR}/scylla-source.json" \
+            --env-file "${PROJECT_ROOT}/.env" \
+            --validate || return 1
+    else
+        log_warn "Source connector template not found, using existing config"
+    fi
+
+    # Process sink connector template
+    if [ -f "${CONNECTOR_CONFIG_DIR}/postgres-sink.json.template" ]; then
+        bash "$template_processor" \
+            --template "${CONNECTOR_CONFIG_DIR}/postgres-sink.json.template" \
+            --output "${CONNECTOR_CONFIG_DIR}/postgres-sink.json" \
+            --env-file "${PROJECT_ROOT}/.env" \
+            --validate || return 1
+    else
+        log_warn "Sink connector template not found, using existing config"
+    fi
+
+    log_success "Connector configurations processed successfully"
 }
 
 check_connector_exists() {
@@ -307,6 +355,12 @@ if [ "$SHOW_STATUS" = true ]; then
     list_all_connectors
     exit 0
 fi
+
+# Process connector configuration templates
+process_connector_templates || {
+    log_error "Failed to process connector configuration templates"
+    exit 1
+}
 
 # Validate configurations
 if [ "$VALIDATE_ONLY" = true ]; then
