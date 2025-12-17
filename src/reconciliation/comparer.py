@@ -43,13 +43,13 @@ class RowComparer:
             postgres_row: Row from PostgreSQL
             ignore_fields: List of field names to ignore in comparison
             case_sensitive: Whether field names are case-sensitive
-            float_tolerance: Tolerance for floating point comparison
+            float_tolerance: Tolerance for floating point comparison (per-call basis)
 
         Returns:
             True if rows are equal, False otherwise
         """
-        if float_tolerance is not None:
-            self.float_tolerance = float_tolerance
+        # Use local variable instead of modifying instance state
+        tolerance = float_tolerance if float_tolerance is not None else self.float_tolerance
 
         # Normalize both rows
         norm_scylla = self.normalize_row(scylla_row)
@@ -79,12 +79,12 @@ class RowComparer:
                 if (sf.lower() if not case_sensitive else sf) not in ignore_set
             ]
 
-        # Compare all common fields
+        # Compare all common fields - pass tolerance to comparison method
         for scylla_field, postgres_field in common_fields:
             scylla_value = norm_scylla[scylla_field]
             postgres_value = norm_postgres[postgres_field]
 
-            if not self._values_equal(scylla_value, postgres_value):
+            if not self._values_equal(scylla_value, postgres_value, tolerance):
                 logger.debug(
                     f"Field {scylla_field} mismatch: "
                     f"ScyllaDB={scylla_value}, PostgreSQL={postgres_value}"
@@ -228,17 +228,21 @@ class RowComparer:
         # Return value as-is for other types
         return value
 
-    def _values_equal(self, value1: Any, value2: Any) -> bool:
+    def _values_equal(self, value1: Any, value2: Any, float_tolerance: float = None) -> bool:
         """
         Compare two normalized values for equality.
 
         Args:
             value1: First value
             value2: Second value
+            float_tolerance: Tolerance for float comparison (overrides instance default)
 
         Returns:
             True if values are equal
         """
+        # Use provided tolerance or fall back to instance default
+        tolerance = float_tolerance if float_tolerance is not None else self.float_tolerance
+
         # Handle None/NULL
         if value1 is None and value2 is None:
             return True
@@ -260,7 +264,7 @@ class RowComparer:
 
         # Handle float comparison with tolerance
         if isinstance(value1, float) and isinstance(value2, float):
-            return abs(value1 - value2) < self.float_tolerance
+            return abs(value1 - value2) < tolerance
 
         # Handle datetime comparison
         if isinstance(value1, datetime) and isinstance(value2, datetime):

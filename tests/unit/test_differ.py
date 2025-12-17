@@ -338,3 +338,72 @@ class TestDataDiffer:
         assert "phone" in schema_diff["only_in_target"]
         assert "user_id" in schema_diff["common_fields"]
         assert "username" in schema_diff["common_fields"]
+
+    # ===== Bug #2 Tests: Key Validation =====
+
+    def test_extract_key_missing_field_raises_error(self, differ):
+        """Test that missing key field raises KeyError."""
+        row = {"name": "John", "email": "john@example.com"}
+
+        with pytest.raises(KeyError) as exc_info:
+            differ._extract_key(row, "user_id")
+
+        assert "Key field 'user_id' not found" in str(exc_info.value)
+        assert "Available fields:" in str(exc_info.value)
+
+    def test_extract_key_null_value_raises_error(self, differ):
+        """Test that NULL key value raises ValueError."""
+        row = {"user_id": None, "name": "John"}
+
+        with pytest.raises(ValueError) as exc_info:
+            differ._extract_key(row, "user_id")
+
+        assert "Key field 'user_id' has NULL value" in str(exc_info.value)
+        assert "Keys cannot be NULL" in str(exc_info.value)
+
+    def test_extract_composite_key_missing_field(self, differ):
+        """Test composite key with missing field."""
+        row = {"order_id": 123, "customer_id": 456}
+
+        with pytest.raises(KeyError) as exc_info:
+            differ._extract_key(row, ["order_id", "item_id"])
+
+        assert "Key field 'item_id' not found" in str(exc_info.value)
+
+    def test_extract_composite_key_null_value(self, differ):
+        """Test composite key with NULL value."""
+        row = {"order_id": 123, "item_id": None}
+
+        with pytest.raises(ValueError) as exc_info:
+            differ._extract_key(row, ["order_id", "item_id"])
+
+        assert "Key field 'item_id' has NULL value" in str(exc_info.value)
+
+    def test_build_key_index_with_invalid_row(self, differ):
+        """Test that build_key_index fails fast on invalid row."""
+        data = [
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": "Bob"},
+            {"name": "Charlie"},  # Missing 'id'
+            {"id": 4, "name": "David"}
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            differ.build_key_index(data, "id")
+
+        assert "Invalid row at index 2" in str(exc_info.value)
+        assert "Key field 'id' not found" in str(exc_info.value)
+
+    def test_find_discrepancies_with_null_keys(self, differ):
+        """Test discrepancy detection handles null keys gracefully."""
+        source = [
+            {"id": 1, "value": "A"},
+            {"id": None, "value": "B"}  # NULL key
+        ]
+
+        target = [
+            {"id": 1, "value": "A"}
+        ]
+
+        with pytest.raises(ValueError):
+            differ.find_all_discrepancies(source, target, "id")

@@ -366,12 +366,25 @@ class DataDiffer:
 
         Returns:
             Dictionary mapping key → row
+
+        Raises:
+            KeyError: If key field is missing from any row
+            ValueError: If key field contains NULL in any row
         """
         index = {}
 
-        for row in data:
-            key = self._extract_key(row, key_field, case_sensitive_keys)
-            index[key] = row
+        for i, row in enumerate(data):
+            try:
+                key = self._extract_key(row, key_field, case_sensitive_keys)
+                index[key] = row
+            except (KeyError, ValueError) as e:
+                logger.error(
+                    f"Failed to extract key from row {i}: {e}. "
+                    f"Row data: {row}"
+                )
+                raise ValueError(
+                    f"Invalid row at index {i}: {e}"
+                ) from e
 
         return index
 
@@ -457,8 +470,16 @@ class DataDiffer:
                 "common_fields": []
             }
 
-        source_fields = set(source_data[0].keys()) if source_data else set()
-        target_fields = set(target_data[0].keys()) if target_data else set()
+        # Aggregate all fields from all rows (not just first row)
+        source_fields = set()
+        if source_data:
+            for row in source_data:
+                source_fields.update(row.keys())
+
+        target_fields = set()
+        if target_data:
+            for row in target_data:
+                target_fields.update(row.keys())
 
         return {
             "only_in_source": sorted(source_fields - target_fields),
@@ -482,14 +503,28 @@ class DataDiffer:
 
         Returns:
             Key value (string for single key, tuple for composite key)
+
+        Raises:
+            KeyError: If key field is missing from row
+            ValueError: If key field contains None value
         """
         if isinstance(key_field, list):
             # Composite key
             key_values = []
             for field in key_field:
-                value = row.get(field)
+                if field not in row:
+                    raise KeyError(
+                        f"Key field '{field}' not found in row. "
+                        f"Available fields: {list(row.keys())}"
+                    )
+
+                value = row[field]
                 if value is None:
-                    value = ""
+                    raise ValueError(
+                        f"Key field '{field}' has NULL value in row. "
+                        f"Keys cannot be NULL. Row: {row}"
+                    )
+
                 str_value = str(value)
                 if not case_sensitive_keys:
                     str_value = str_value.lower()
@@ -497,9 +532,19 @@ class DataDiffer:
             return tuple(key_values)
         else:
             # Single key
-            value = row.get(key_field)
+            if key_field not in row:
+                raise KeyError(
+                    f"Key field '{key_field}' not found in row. "
+                    f"Available fields: {list(row.keys())}"
+                )
+
+            value = row[key_field]
             if value is None:
-                return ""
+                raise ValueError(
+                    f"Key field '{key_field}' has NULL value in row. "
+                    f"Keys cannot be NULL. Row: {row}"
+                )
+
             str_value = str(value)
             if not case_sensitive_keys:
                 str_value = str_value.lower()
