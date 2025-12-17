@@ -407,3 +407,189 @@ class TestDataDiffer:
 
         with pytest.raises(ValueError):
             differ.find_all_discrepancies(source, target, "id")
+
+    # ===== Bug #5 Tests: Streaming Reconciliation =====
+
+    def test_find_all_discrepancies_streaming(self, differ):
+        """Test streaming discrepancy detection for large datasets."""
+        # Create large dataset
+        source_data = [
+            {"id": i, "value": f"value_{i}", "data": f"data_{i}"}
+            for i in range(1000)
+        ]
+
+        target_data = [
+            {"id": i, "value": f"value_{i}", "data": f"modified_{i}" if i % 10 == 0 else f"data_{i}"}
+            for i in range(500, 1500)
+        ]
+
+        result = differ.find_all_discrepancies_streaming(
+            source_data,
+            target_data,
+            key_field="id",
+            batch_size=100
+        )
+
+        # Validate structure
+        assert "missing" in result
+        assert "extra" in result
+        assert "mismatches" in result
+        assert "stats" in result
+
+        # Validate statistics
+        assert result["stats"]["total_source_rows"] == 1000
+        assert result["stats"]["total_target_rows"] == 1000
+        assert result["stats"]["batch_size"] == 100
+
+        # Missing: rows 0-499 in source but not in target
+        assert len(result["missing"]) == 500
+
+        # Extra: rows 1000-1499 in target but not in source
+        assert len(result["extra"]) == 500
+
+        # Mismatches: rows 500-999 with modified data (every 10th row)
+        # 500-999 = 500 common rows, 50 have mismatches (every 10th)
+        assert len(result["mismatches"]) == 50
+
+    def test_iter_discrepancies_generator(self, differ):
+        """Test generator-based discrepancy iterator."""
+        source_data = [
+            {"id": 1, "value": "A"},
+            {"id": 2, "value": "B"},
+            {"id": 3, "value": "C"},
+        ]
+
+        target_data = [
+            {"id": 2, "value": "B_modified"},  # Mismatch
+            {"id": 3, "value": "C"},
+            {"id": 4, "value": "D"},  # Extra
+        ]
+
+        discrepancies = list(differ.iter_discrepancies(
+            source_data,
+            target_data,
+            key_field="id",
+            batch_size=2
+        ))
+
+        # Count by type
+        missing_count = sum(1 for t, _ in discrepancies if t == "missing")
+        extra_count = sum(1 for t, _ in discrepancies if t == "extra")
+        mismatch_count = sum(1 for t, _ in discrepancies if t == "mismatch")
+
+        assert missing_count == 1  # id=1
+        assert extra_count == 1    # id=4
+        assert mismatch_count == 1 # id=2
+
+    def test_iter_discrepancies_large_dataset(self, differ):
+        """Test iterator with large dataset for memory efficiency."""
+        # Create 10,000 row dataset
+        source_data = [{"id": i, "value": f"val_{i}"} for i in range(10000)]
+        target_data = [{"id": i, "value": f"val_{i}"} for i in range(5000, 15000)]
+
+        # Process as iterator
+        missing_count = 0
+        extra_count = 0
+        mismatch_count = 0
+
+        for disc_type, disc_data in differ.iter_discrepancies(
+            source_data,
+            target_data,
+            key_field="id",
+            batch_size=1000
+        ):
+            if disc_type == "missing":
+                missing_count += 1
+            elif disc_type == "extra":
+                extra_count += 1
+            elif disc_type == "mismatch":
+                mismatch_count += 1
+
+        assert missing_count == 5000  # 0-4999
+        assert extra_count == 5000    # 10000-14999
+        assert mismatch_count == 0    # All common rows match
+
+    def test_streaming_with_mismatches(self, differ):
+        """Test streaming detection with field-level mismatches."""
+        source_data = [
+            {"id": 1, "name": "Alice", "email": "alice@example.com"},
+            {"id": 2, "name": "Bob", "email": "bob@example.com"},
+            {"id": 3, "name": "Charlie", "email": "charlie@example.com"},
+        ]
+
+        target_data = [
+            {"id": 1, "name": "Alice", "email": "alice@newdomain.com"},  # Mismatch
+            {"id": 2, "name": "Robert", "email": "bob@example.com"},     # Mismatch
+            {"id": 3, "name": "Charlie", "email": "charlie@example.com"}, # Match
+        ]
+
+        result = differ.find_all_discrepancies_streaming(
+            source_data,
+            target_data,
+            key_field="id",
+            batch_size=2
+        )
+
+        assert len(result["missing"]) == 0
+        assert len(result["extra"]) == 0
+        assert len(result["mismatches"]) == 2
+
+        # Verify mismatch structure
+        mismatch = result["mismatches"][0]
+        assert "key" in mismatch
+        assert "scylla" in mismatch
+        assert "postgres" in mismatch
+
+    def test_streaming_with_ignore_fields(self, differ):
+        """Test streaming with ignored fields."""
+        source_data = [
+            {"id": 1, "value": "A", "timestamp": "2024-01-01"},
+            {"id": 2, "value": "B", "timestamp": "2024-01-02"},
+        ]
+
+        target_data = [
+            {"id": 1, "value": "A", "timestamp": "2024-12-01"},  # timestamp different
+            {"id": 2, "value": "B", "timestamp": "2024-12-02"},  # timestamp different
+        ]
+
+        # Without ignoring timestamp - should find mismatches
+        result1 = differ.find_all_discrepancies_streaming(
+            source_data,
+            target_data,
+            key_field="id"
+        )
+        assert len(result1["mismatches"]) == 2
+
+        # With ignoring timestamp - should find no mismatches
+        result2 = differ.find_all_discrepancies_streaming(
+            source_data,
+            target_data,
+            key_field="id",
+            ignore_fields=["timestamp"]
+        )
+        assert len(result2["mismatches"]) == 0
+
+    def test_iter_discrepancies_empty_datasets(self, differ):
+        """Test iterator with empty datasets."""
+        result = list(differ.iter_discrepancies([], [], key_field="id"))
+        assert len(result) == 0
+
+    def test_streaming_batch_progress_logging(self, differ):
+        """Test that batch processing logs progress correctly."""
+        # Create dataset large enough to trigger progress logging
+        source_data = [{"id": i, "value": f"v{i}"} for i in range(15000)]
+        target_data = [{"id": i, "value": f"v{i}"} for i in range(15000)]
+
+        result = differ.find_all_discrepancies_streaming(
+            source_data,
+            target_data,
+            key_field="id",
+            batch_size=1000
+        )
+
+        # Verify stats
+        assert result["stats"]["batches_processed"] == 15  # 15000 / 1000
+        assert result["stats"]["batch_size"] == 1000
+        assert len(result["missing"]) == 0
+        assert len(result["extra"]) == 0
+        assert len(result["mismatches"]) == 0

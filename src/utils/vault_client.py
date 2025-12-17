@@ -7,11 +7,34 @@ used by the CDC pipeline components.
 
 import os
 from typing import Dict, Any, Optional
+from dataclasses import dataclass
 import hvac
 from hvac.exceptions import VaultError, InvalidPath
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HealthStatus:
+    """
+    Structured health status for Vault client.
+
+    Attributes:
+        healthy: Overall health status (True if healthy)
+        authenticated: Whether client is authenticated
+        sealed: Whether Vault is sealed
+        error: Error message if health check failed
+    """
+
+    healthy: bool
+    authenticated: bool
+    sealed: bool
+    error: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        """Allow boolean checks for backward compatibility."""
+        return self.healthy
 
 
 class VaultClient:
@@ -169,31 +192,62 @@ class VaultClient:
             logger.error(f"Failed to get Kafka credentials: {e}")
             raise
 
-    def health_check(self) -> bool:
+    def health_check(self) -> HealthStatus:
         """
         Check if Vault is accessible and authenticated.
 
         Returns:
-            True if Vault is healthy and authenticated, False otherwise
+            HealthStatus object with detailed health information.
+            Can be used as boolean for backward compatibility.
+
+        Examples:
+            >>> vault = VaultClient()
+            >>> status = vault.health_check()
+            >>> if status:  # Boolean check (backward compatible)
+            ...     print("Vault is healthy")
+            >>> print(f"Authenticated: {status.authenticated}")
+            >>> print(f"Sealed: {status.sealed}")
+            >>> if status.error:
+            ...     print(f"Error: {status.error}")
         """
         try:
-            if not self.client.is_authenticated():
-                logger.warning("Vault authentication check failed")
-                return False
+            # Check authentication
+            is_authenticated = self.client.is_authenticated()
 
+            if not is_authenticated:
+                logger.warning("Vault authentication check failed")
+                return HealthStatus(
+                    healthy=False,
+                    authenticated=False,
+                    sealed=True,
+                    error="Not authenticated"
+                )
+
+            # Check seal status
             health = self.client.sys.read_health_status()
-            is_healthy = not health.get("sealed", True)
+            is_sealed = health.get("sealed", True)
+            is_healthy = is_authenticated and not is_sealed
 
             if is_healthy:
                 logger.info("Vault health check passed")
             else:
                 logger.warning("Vault is sealed")
 
-            return is_healthy
+            return HealthStatus(
+                healthy=is_healthy,
+                authenticated=is_authenticated,
+                sealed=is_sealed,
+                error=None if is_healthy else "Vault is sealed"
+            )
 
         except Exception as e:
             logger.error(f"Vault health check failed: {e}")
-            return False
+            return HealthStatus(
+                healthy=False,
+                authenticated=False,
+                sealed=True,
+                error=str(e)
+            )
 
     def list_secrets(self, path: str = "") -> list:
         """

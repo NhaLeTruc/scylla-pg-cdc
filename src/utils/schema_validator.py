@@ -52,22 +52,32 @@ class SchemaValidator:
     between schema versions.
     """
 
-    def __init__(self, compatibility_mode: CompatibilityMode = CompatibilityMode.BACKWARD, schema_registry_url: Optional[str] = None):
+    def __init__(
+        self,
+        compatibility_mode: CompatibilityMode = CompatibilityMode.BACKWARD,
+        schema_registry_url: Optional[str] = None,
+        strict_mode: bool = False
+    ):
         """
         Initialize schema validator.
 
         Args:
             compatibility_mode: Schema compatibility mode to enforce
             schema_registry_url: URL of Schema Registry (e.g., http://localhost:8081)
+            strict_mode: If True, treat warnings as errors
         """
         self.compatibility_mode = compatibility_mode
         self.schema_registry_url = schema_registry_url
         self.schema_registry_client = None
+        self.strict_mode = strict_mode
 
         if schema_registry_url:
             self._init_schema_registry_client()
 
-        logger.info(f"Initialized SchemaValidator with {compatibility_mode.value} compatibility")
+        logger.info(
+            f"Initialized SchemaValidator with {compatibility_mode.value} compatibility "
+            f"(strict_mode={strict_mode})"
+        )
 
     def _init_schema_registry_client(self):
         """Initialize Schema Registry HTTP client."""
@@ -155,12 +165,13 @@ class SchemaValidator:
         self.schema_registry_client = SimpleSchemaRegistryClient(self.schema_registry_url)
         logger.info(f"Initialized Schema Registry client for {self.schema_registry_url}")
 
-    def validate_avro_schema(self, schema: Dict[str, Any]) -> bool:
+    def validate_avro_schema(self, schema: Dict[str, Any], warn_missing_namespace: bool = True) -> bool:
         """
         Validate an Avro schema structure.
 
         Args:
             schema: Avro schema dictionary
+            warn_missing_namespace: If True, warn when namespace is missing
 
         Returns:
             True if schema is valid
@@ -177,6 +188,19 @@ class SchemaValidator:
 
         if missing_fields:
             raise SchemaValidationError(f"Schema missing required fields: {missing_fields}")
+
+        # Check for missing namespace (Bug #6 fix)
+        if warn_missing_namespace and "namespace" not in schema:
+            warning_msg = (
+                f"Schema '{schema.get('name')}' missing 'namespace' field. "
+                f"Namespaces prevent naming conflicts and are strongly recommended. "
+                f"Example: 'namespace': 'com.example.cdc'"
+            )
+
+            if self.strict_mode:
+                raise SchemaValidationError(warning_msg)
+            else:
+                logger.warning(warning_msg)
 
         # Validate type
         valid_types = ["record", "enum", "array", "map", "fixed"]

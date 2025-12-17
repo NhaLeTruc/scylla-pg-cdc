@@ -640,3 +640,101 @@ class TestSchemaRegistryIntegration:
 
         assert result is True
         mock_registry_client.set_compatibility.assert_called_once_with("user-topic-value", "FULL")
+
+
+class TestNamespaceValidation:
+    """Test namespace validation (Bug #6)."""
+
+    @pytest.fixture
+    def validator(self):
+        """Create a SchemaValidator instance in normal mode."""
+        return SchemaValidator()
+
+    @pytest.fixture
+    def strict_validator(self):
+        """Create a SchemaValidator instance in strict mode."""
+        return SchemaValidator(strict_mode=True)
+
+    def test_schema_with_namespace_passes(self, validator):
+        """Test that schema with namespace passes validation."""
+        schema = {
+            "type": "record",
+            "name": "User",
+            "namespace": "com.example.cdc",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        assert validator.validate_avro_schema(schema) is True
+
+    def test_schema_without_namespace_warns_in_normal_mode(self, validator, caplog):
+        """Test that schema without namespace generates warning in normal mode."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        # Should pass but generate warning
+        assert validator.validate_avro_schema(schema) is True
+        assert "missing 'namespace' field" in caplog.text
+        assert "Namespaces prevent naming conflicts" in caplog.text
+
+    def test_schema_without_namespace_fails_in_strict_mode(self, strict_validator):
+        """Test that schema without namespace raises error in strict mode."""
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        with pytest.raises(SchemaValidationError) as exc_info:
+            strict_validator.validate_avro_schema(schema)
+
+        assert "missing 'namespace' field" in str(exc_info.value)
+        assert "Namespaces prevent naming conflicts" in str(exc_info.value)
+
+    def test_namespace_warning_can_be_disabled(self, validator):
+        """Test that namespace warning can be disabled."""
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        # Should pass without warning when warn_missing_namespace=False
+        assert validator.validate_avro_schema(schema, warn_missing_namespace=False) is True
+
+    def test_strict_mode_initialization(self, strict_validator):
+        """Test that strict mode is properly initialized."""
+        assert strict_validator.strict_mode is True
+
+    def test_normal_mode_initialization(self, validator):
+        """Test that normal mode is default."""
+        assert validator.strict_mode is False
+
+    def test_namespace_in_nested_record(self, validator):
+        """Test namespace validation with nested record types."""
+        schema = {
+            "type": "record",
+            "name": "Order",
+            "namespace": "com.example.orders",
+            "fields": [
+                {"name": "id", "type": "string"},
+                {
+                    "name": "customer",
+                    "type": {
+                        "type": "record",
+                        "name": "Customer",
+                        "namespace": "com.example.customers",
+                        "fields": [
+                            {"name": "customer_id", "type": "string"}
+                        ]
+                    }
+                }
+            ]
+        }
+
+        assert validator.validate_avro_schema(schema) is True

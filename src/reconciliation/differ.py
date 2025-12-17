@@ -277,6 +277,201 @@ class DataDiffer:
             "mismatch_count": mismatch_count
         }
 
+    def find_all_discrepancies_streaming(
+        self,
+        source_data: List[Dict[str, Any]],
+        target_data: List[Dict[str, Any]],
+        key_field: Union[str, List[str]],
+        batch_size: int = 1000,
+        ignore_fields: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find all discrepancies using streaming approach for large datasets.
+
+        This method processes data in batches and returns complete results
+        while maintaining memory efficiency.
+
+        Args:
+            source_data: Source dataset
+            target_data: Target dataset
+            key_field: Key field(s)
+            batch_size: Number of rows per batch
+            ignore_fields: Fields to ignore in mismatch detection
+
+        Returns:
+            Dictionary with:
+            - missing: List of rows missing in target
+            - extra: List of extra rows in target
+            - mismatches: List of mismatched rows
+            - stats: Processing statistics
+
+        Example:
+            >>> differ = DataDiffer()
+            >>> result = differ.find_all_discrepancies_streaming(
+            ...     source_data=large_source_dataset,
+            ...     target_data=large_target_dataset,
+            ...     key_field="id",
+            ...     batch_size=5000
+            ... )
+            >>> print(f"Found {len(result['missing'])} missing rows")
+        """
+        logger.info(
+            f"Starting streaming discrepancy detection: "
+            f"{len(source_data)} source rows, {len(target_data)} target rows, "
+            f"batch size: {batch_size}"
+        )
+
+        # Build indices in batches to reduce memory pressure
+        source_index = self.build_key_index(source_data, key_field)
+        target_index = self.build_key_index(target_data, key_field)
+
+        source_keys = set(source_index.keys())
+        target_keys = set(target_index.keys())
+
+        # Find missing and extra keys
+        missing_keys = source_keys - target_keys
+        extra_keys = target_keys - source_keys
+        common_keys = source_keys & target_keys
+
+        # Collect results
+        missing = [source_index[key] for key in missing_keys]
+        extra = [target_index[key] for key in extra_keys]
+        mismatches = []
+
+        # Process common keys in batches for mismatches
+        common_keys_list = list(common_keys)
+        batches_processed = 0
+
+        for i in range(0, len(common_keys_list), batch_size):
+            batch_keys = common_keys_list[i:i+batch_size]
+
+            for key in batch_keys:
+                source_row = source_index[key]
+                target_row = target_index[key]
+
+                if not self.comparer.compare_rows(
+                    source_row,
+                    target_row,
+                    ignore_fields=ignore_fields
+                ):
+                    mismatches.append({
+                        "key": key,
+                        "scylla": source_row,
+                        "postgres": target_row
+                    })
+
+            batches_processed += 1
+            if batches_processed % 10 == 0:
+                logger.debug(
+                    f"Processed {batches_processed} batches "
+                    f"({i + len(batch_keys)}/{len(common_keys_list)} rows)"
+                )
+
+        logger.info(
+            f"Streaming processing complete: {len(missing)} missing, "
+            f"{len(extra)} extra, {len(mismatches)} mismatched"
+        )
+
+        return {
+            "missing": missing,
+            "extra": extra,
+            "mismatches": mismatches,
+            "stats": {
+                "total_source_rows": len(source_data),
+                "total_target_rows": len(target_data),
+                "batches_processed": batches_processed,
+                "batch_size": batch_size
+            }
+        }
+
+    def iter_discrepancies(
+        self,
+        source_data: List[Dict[str, Any]],
+        target_data: List[Dict[str, Any]],
+        key_field: Union[str, List[str]],
+        batch_size: int = 1000,
+        ignore_fields: Optional[List[str]] = None
+    ):
+        """
+        Iterator that yields discrepancies in batches for maximum memory efficiency.
+
+        This generator-based approach is ideal for processing very large datasets
+        (>1M rows) where you want to process results as they're found rather than
+        collecting everything in memory.
+
+        Args:
+            source_data: Source dataset
+            target_data: Target dataset
+            key_field: Key field(s)
+            batch_size: Number of rows per batch
+            ignore_fields: Fields to ignore
+
+        Yields:
+            Tuples of (discrepancy_type, discrepancy_data) where:
+            - discrepancy_type: "missing", "extra", or "mismatch"
+            - discrepancy_data: Row or mismatch record
+
+        Example:
+            >>> differ = DataDiffer()
+            >>> for disc_type, disc_data in differ.iter_discrepancies(
+            ...     source_data=huge_source,
+            ...     target_data=huge_target,
+            ...     key_field="id",
+            ...     batch_size=10000
+            ... ):
+            ...     if disc_type == "missing":
+            ...         print(f"Missing row: {disc_data}")
+            ...     elif disc_type == "mismatch":
+            ...         print(f"Mismatch: {disc_data['key']}")
+        """
+        logger.info(
+            f"Starting streaming iterator: "
+            f"{len(source_data)} source rows, {len(target_data)} target rows"
+        )
+
+        # Build indices
+        source_index = self.build_key_index(source_data, key_field)
+        target_index = self.build_key_index(target_data, key_field)
+
+        source_keys = set(source_index.keys())
+        target_keys = set(target_index.keys())
+
+        # Yield missing rows
+        missing_keys = source_keys - target_keys
+        logger.debug(f"Yielding {len(missing_keys)} missing rows")
+        for key in missing_keys:
+            yield ("missing", source_index[key])
+
+        # Yield extra rows
+        extra_keys = target_keys - source_keys
+        logger.debug(f"Yielding {len(extra_keys)} extra rows")
+        for key in extra_keys:
+            yield ("extra", target_index[key])
+
+        # Yield mismatches in batches
+        common_keys = list(source_keys & target_keys)
+        logger.debug(f"Processing {len(common_keys)} common rows for mismatches")
+
+        for i in range(0, len(common_keys), batch_size):
+            batch_keys = common_keys[i:i+batch_size]
+
+            for key in batch_keys:
+                source_row = source_index[key]
+                target_row = target_index[key]
+
+                if not self.comparer.compare_rows(
+                    source_row,
+                    target_row,
+                    ignore_fields=ignore_fields
+                ):
+                    yield ("mismatch", {
+                        "key": key,
+                        "scylla": source_row,
+                        "postgres": target_row
+                    })
+
+        logger.info("Streaming iterator complete")
+
     def get_discrepancy_summary(
         self,
         source_data: List[Dict[str, Any]],

@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from hvac.exceptions import VaultError, InvalidPath
 
-from src.utils.vault_client import VaultClient
+from src.utils.vault_client import VaultClient, HealthStatus
 
 
 class TestVaultClient:
@@ -183,13 +183,24 @@ class TestVaultClient:
         assert creds["bootstrap_servers"] == "kafka:9092"
 
     def test_health_check_success(self, mock_hvac_client):
-        """Test successful health check."""
+        """Test successful health check (Bug #7: structured health status)."""
         mock_client = mock_hvac_client.return_value
         mock_client.is_authenticated.return_value = True
         mock_client.sys.read_health_status.return_value = {"sealed": False}
 
         client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
-        assert client.health_check() is True
+        status = client.health_check()
+
+        # Test structured response
+        assert isinstance(status, HealthStatus)
+        assert status.healthy is True
+        assert status.authenticated is True
+        assert status.sealed is False
+        assert status.error is None
+
+        # Test backward compatibility (boolean check)
+        assert status is True
+        assert bool(status) is True
 
     def test_health_check_not_authenticated(self, mock_hvac_client):
         """Test health check with failed authentication."""
@@ -199,7 +210,18 @@ class TestVaultClient:
         mock_client = mock_hvac_client.return_value
         mock_client.is_authenticated.return_value = False
 
-        assert client.health_check() is False
+        status = client.health_check()
+
+        # Test structured response
+        assert isinstance(status, HealthStatus)
+        assert status.healthy is False
+        assert status.authenticated is False
+        assert status.sealed is True
+        assert status.error == "Not authenticated"
+
+        # Test backward compatibility (boolean check)
+        assert status is False
+        assert bool(status) is False
 
     def test_health_check_sealed(self, mock_hvac_client):
         """Test health check with sealed Vault."""
@@ -209,7 +231,37 @@ class TestVaultClient:
 
         client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
         client.client = mock_client
-        assert client.health_check() is False
+        status = client.health_check()
+
+        # Test structured response
+        assert isinstance(status, HealthStatus)
+        assert status.healthy is False
+        assert status.authenticated is True
+        assert status.sealed is True
+        assert status.error == "Vault is sealed"
+
+        # Test backward compatibility (boolean check)
+        assert status is False
+        assert bool(status) is False
+
+    def test_health_check_exception(self, mock_hvac_client):
+        """Test health check with exception."""
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        mock_client = mock_hvac_client.return_value
+        mock_client.is_authenticated.side_effect = Exception("Connection error")
+
+        status = client.health_check()
+
+        # Test structured response
+        assert isinstance(status, HealthStatus)
+        assert status.healthy is False
+        assert status.authenticated is False
+        assert status.sealed is True
+        assert "Connection error" in status.error
+
+        # Test backward compatibility (boolean check)
+        assert bool(status) is False
 
     def test_list_secrets_success(self, mock_hvac_client):
         """Test listing secrets."""
