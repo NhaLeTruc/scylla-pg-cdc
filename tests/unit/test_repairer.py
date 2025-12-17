@@ -269,3 +269,223 @@ class TestDataRepairer:
             assert max(delete_indices) < min(insert_indices)
         if insert_indices and update_indices:
             assert max(insert_indices) < min(update_indices)
+
+    #  ===== Bug #1 Tests: SQL Injection Protection =====
+
+    def test_insert_sql_with_reserved_keywords(self, repairer):
+        """Test INSERT with SQL reserved keywords as field names."""
+        row = {
+            "id": 1,
+            "order": "ORD-123",  # Reserved keyword
+            "select": "value",    # Reserved keyword
+            "from": "source"      # Reserved keyword
+        }
+
+        result = repairer.generate_insert_sql(
+            row=row,
+            table_name="test_table",
+            schema="test_schema"
+        )
+
+        # Verify keywords are quoted
+        assert '"order"' in result["sql"]
+        assert '"select"' in result["sql"]
+        assert '"from"' in result["sql"]
+
+        # Verify SQL is valid PostgreSQL
+        assert '"test_schema"."test_table"' in result["sql"]
+
+    def test_update_sql_with_special_characters(self, repairer):
+        """Test UPDATE with special characters in field names."""
+        mismatch = {
+            "scylla": {
+                "id": 1,
+                "user-name": "john",  # Hyphen in field name
+                "email@address": "john@example.com"  # Special char
+            },
+            "postgres": {
+                "id": 1,
+                "user-name": "jane",
+                "email@address": "jane@example.com"
+            }
+        }
+
+        result = repairer.generate_update_sql(
+            mismatch=mismatch,
+            table_name="users",
+            schema="cdc_data",
+            key_field="id"
+        )
+
+        # Verify special characters are handled
+        assert '"user-name"' in result["sql"]
+        assert '"email@address"' in result["sql"]
+
+    def test_delete_sql_with_composite_key(self, repairer):
+        """Test DELETE with composite key containing reserved words."""
+        row = {
+            "table": "orders",  # Reserved keyword
+            "order": 123,       # Reserved keyword
+            "value": 100.0
+        }
+
+        result = repairer.generate_delete_sql(
+            row=row,
+            table_name="test_table",
+            schema="test_schema",
+            key_field=["table", "order"]
+        )
+
+        # Verify composite key is quoted
+        assert '"table"' in result["sql"]
+        assert '"order"' in result["sql"]
+        assert 'WHERE' in result["sql"]
+
+    def test_quote_identifier_escapes_double_quotes(self, repairer):
+        """Test that double quotes in identifiers are escaped."""
+        # Field name with double quote
+        quoted = repairer._quote_identifier('field"name')
+        assert quoted == '"field""name"'  # Double quotes are doubled
+
+    def test_sql_injection_prevention(self, repairer):
+        """Test that SQL injection attempts are neutralized."""
+        # Malicious field name
+        malicious_row = {
+            "id": 1,
+            "'; DROP TABLE users; --": "malicious"
+        }
+
+        result = repairer.generate_insert_sql(
+            row=malicious_row,
+            table_name="test_table",
+            schema="test_schema"
+        )
+
+        # Verify injection is neutralized by quoting
+        assert 'DROP TABLE' in result["sql"]  # It's there but quoted
+        assert '"\'; DROP TABLE users; --"' in result["sql"]  # Safely quoted
+
+    def test_backward_compatibility_quote_identifiers_false(self, repairer):
+        """Test backward compatibility when quote_identifiers=False."""
+        row = {"id": 1, "name": "test"}
+
+        result = repairer.generate_insert_sql(
+            row=row,
+            table_name="test_table",
+            schema="test_schema",
+            quote_identifiers=False
+        )
+
+        # Should not quote regular identifiers when disabled
+        assert '"id"' not in result["sql"]
+        assert '"name"' not in result["sql"]
+        assert '"test_schema"."test_table"' in result["sql"]  # Table still quoted
+
+    # ===== Bug #3 Tests: Data Type Handling =====
+
+    def test_format_value_uuid(self, repairer):
+        """Test UUID formatting."""
+        from uuid import UUID
+        uuid_val = UUID('123e4567-e89b-12d3-a456-426614174000')
+
+        result = repairer._format_value(uuid_val)
+        assert result == "'123e4567-e89b-12d3-a456-426614174000'"
+
+    def test_format_value_bytes(self, repairer):
+        """Test bytes formatting for PostgreSQL bytea."""
+        # Binary data
+        binary_data = b'\x00\x01\x02\xDE\xAD\xBE\xEF'
+        result = repairer._format_value(binary_data)
+
+        assert result == "'\\x000102deadbeef'"
+
+    def test_format_value_bytearray(self, repairer):
+        """Test bytearray formatting."""
+        data = bytearray([0, 1, 2, 255])
+        result = repairer._format_value(data)
+
+        assert result == "'\\x000102ff'"
+
+    def test_format_value_timedelta(self, repairer):
+        """Test timedelta formatting as PostgreSQL interval."""
+        from datetime import timedelta
+
+        # 1 hour, 30 minutes
+        delta = timedelta(hours=1, minutes=30)
+        result = repairer._format_value(delta)
+
+        assert result == "INTERVAL '5400 seconds'"
+
+    def test_format_value_decimal(self, repairer):
+        """Test Decimal formatting."""
+        from decimal import Decimal
+
+        decimal_val = Decimal('123.456')
+        result = repairer._format_value(decimal_val)
+
+        assert result == "123.456"
+
+    def test_format_value_large_number(self, repairer):
+        """Test very large number formatting."""
+        large_num = 9999999999999999999999999999
+        result = repairer._format_value(large_num)
+
+        assert result == "9999999999999999999999999999"
+
+    def test_format_value_unsupported_type_raises_error(self, repairer):
+        """Test that unsupported types raise TypeError."""
+        # Custom class
+        class CustomObject:
+            pass
+
+        obj = CustomObject()
+
+        with pytest.raises(TypeError) as exc_info:
+            repairer._format_value(obj)
+
+        assert "Unsupported data type" in str(exc_info.value)
+        assert "CustomObject" in str(exc_info.value)
+        assert "Supported types:" in str(exc_info.value)
+
+    def test_insert_with_binary_data(self, repairer):
+        """Integration test: INSERT with binary data."""
+        from uuid import UUID
+
+        row = {
+            "id": 1,
+            "data": b'\x89PNG\r\n\x1a\n',  # PNG header
+            "checksum": UUID('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+        }
+
+        result = repairer.generate_insert_sql(
+            row=row,
+            table_name="files",
+            schema="storage"
+        )
+
+        assert "'\\x89504e470d0a1a0a'" in result["sql"]
+        assert "'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'" in result["sql"]
+
+    def test_update_with_timedelta(self, repairer):
+        """Integration test: UPDATE with timedelta."""
+        from datetime import timedelta
+
+        mismatch = {
+            "scylla": {
+                "id": 1,
+                "duration": timedelta(minutes=45)
+            },
+            "postgres": {
+                "id": 1,
+                "duration": timedelta(minutes=30)
+            }
+        }
+
+        result = repairer.generate_update_sql(
+            mismatch=mismatch,
+            table_name="sessions",
+            schema="app_data",
+            key_field="id"
+        )
+
+        assert "INTERVAL '2700 seconds'" in result["sql"]

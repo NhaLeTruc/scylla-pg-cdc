@@ -7,7 +7,9 @@ Produces SQL statements to fix inconsistencies between ScyllaDB and PostgreSQL.
 
 import logging
 from typing import Dict, List, Any, Union, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
+from uuid import UUID
 import json
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,44 @@ class DataRepairer:
     def __init__(self):
         """Initialize the data repairer."""
         logger.debug("Initialized DataRepairer")
+
+    def _quote_identifier(self, identifier: str) -> str:
+        """
+        Quote a SQL identifier for safe use in queries.
+
+        Args:
+            identifier: Column name, table name, or schema name
+
+        Returns:
+            Properly quoted identifier
+
+        Examples:
+            >>> _quote_identifier("order")
+            '"order"'
+            >>> _quote_identifier("user_id")
+            '"user_id"'
+            >>> _quote_identifier('field"name')
+            '"field""name"'
+        """
+        # Escape double quotes by doubling them
+        escaped = identifier.replace('"', '""')
+        return f'"{escaped}"'
+
+    def _quote_identifier_list(self, identifiers: List[str]) -> str:
+        """
+        Quote a list of identifiers and join with commas.
+
+        Args:
+            identifiers: List of column names
+
+        Returns:
+            Comma-separated quoted identifiers
+
+        Examples:
+            >>> _quote_identifier_list(["id", "order", "total"])
+            '"id", "order", "total"'
+        """
+        return ", ".join(self._quote_identifier(i) for i in identifiers)
 
     def generate_repair_actions(
         self,
@@ -204,7 +244,7 @@ class DataRepairer:
         row: Dict[str, Any],
         table_name: str,
         schema: str,
-        quote_identifiers: bool = False
+        quote_identifiers: bool = True
     ) -> Dict[str, Any]:
         """
         Generate INSERT SQL for a single row.
@@ -213,17 +253,22 @@ class DataRepairer:
             row: Row data
             table_name: Table name
             schema: Schema name
-            quote_identifiers: Whether to quote identifiers
+            quote_identifiers: Whether to quote identifiers (default: True for safety)
 
         Returns:
             Action dictionary with SQL
         """
-        table_ref = self._format_table_name(schema, table_name, quote_identifiers)
+        table_ref = self._format_table_name(schema, table_name, quote_identifiers=True)
 
         fields = list(row.keys())
         values = [self._format_value(row[field]) for field in fields]
 
-        fields_str = ", ".join(fields)
+        # Quote all field names for SQL injection protection
+        if quote_identifiers:
+            fields_str = self._quote_identifier_list(fields)
+        else:
+            fields_str = ", ".join(fields)
+
         values_str = ", ".join(values)
 
         sql = f"INSERT INTO {table_ref} ({fields_str}) VALUES ({values_str});"
@@ -242,7 +287,7 @@ class DataRepairer:
         table_name: str,
         schema: str,
         key_field: Union[str, List[str]],
-        quote_identifiers: bool = False
+        quote_identifiers: bool = True
     ) -> Dict[str, Any]:
         """
         Generate DELETE SQL for a row.
@@ -252,14 +297,14 @@ class DataRepairer:
             table_name: Table name
             schema: Schema name
             key_field: Key field(s)
-            quote_identifiers: Quote identifiers
+            quote_identifiers: Quote identifiers (default: True for safety)
 
         Returns:
             Action dictionary with SQL
         """
-        table_ref = self._format_table_name(schema, table_name, quote_identifiers)
+        table_ref = self._format_table_name(schema, table_name, quote_identifiers=True)
 
-        where_clause = self._build_where_clause(row, key_field)
+        where_clause = self._build_where_clause(row, key_field, quote_identifiers)
 
         sql = f"DELETE FROM {table_ref} WHERE {where_clause};"
 
@@ -277,7 +322,7 @@ class DataRepairer:
         table_name: str,
         schema: str,
         key_field: Union[str, List[str]],
-        quote_identifiers: bool = False
+        quote_identifiers: bool = True
     ) -> Dict[str, Any]:
         """
         Generate UPDATE SQL for a mismatch.
@@ -287,12 +332,12 @@ class DataRepairer:
             table_name: Table name
             schema: Schema name
             key_field: Key field(s)
-            quote_identifiers: Quote identifiers
+            quote_identifiers: Quote identifiers (default: True for safety)
 
         Returns:
             Action dictionary with SQL
         """
-        table_ref = self._format_table_name(schema, table_name, quote_identifiers)
+        table_ref = self._format_table_name(schema, table_name, quote_identifiers=True)
 
         scylla_row = mismatch["scylla"]
         postgres_row = mismatch["postgres"]
@@ -308,16 +353,17 @@ class DataRepairer:
             key_fields = [key_field] if isinstance(key_field, str) else key_field
             update_fields = [f for f in scylla_row.keys() if f not in key_fields]
 
-        # Build SET clause
+        # Build SET clause with quoted identifiers
         set_parts = []
         for field in update_fields:
             value = self._format_value(scylla_row[field])
-            set_parts.append(f"{field} = {value}")
+            quoted_field = self._quote_identifier(field) if quote_identifiers else field
+            set_parts.append(f"{quoted_field} = {value}")
 
         set_clause = ", ".join(set_parts)
 
-        # Build WHERE clause
-        where_clause = self._build_where_clause(scylla_row, key_field)
+        # Build WHERE clause with quoted identifiers
+        where_clause = self._build_where_clause(scylla_row, key_field, quote_identifiers)
 
         sql = f"UPDATE {table_ref} SET {set_clause} WHERE {where_clause};"
 
@@ -335,7 +381,7 @@ class DataRepairer:
         rows: List[Dict[str, Any]],
         table_name: str,
         schema: str,
-        quote_identifiers: bool = False
+        quote_identifiers: bool = True
     ) -> Dict[str, Any]:
         """
         Generate batch INSERT SQL.
@@ -344,7 +390,7 @@ class DataRepairer:
             rows: List of rows
             table_name: Table name
             schema: Schema name
-            quote_identifiers: Quote identifiers
+            quote_identifiers: Quote identifiers (default: True for safety)
 
         Returns:
             Action dictionary with batch INSERT SQL
@@ -352,11 +398,16 @@ class DataRepairer:
         if not rows:
             raise ValueError("Cannot generate batch insert for empty rows")
 
-        table_ref = self._format_table_name(schema, table_name, quote_identifiers)
+        table_ref = self._format_table_name(schema, table_name, quote_identifiers=True)
 
         # Use fields from first row
         fields = list(rows[0].keys())
-        fields_str = ", ".join(fields)
+
+        # Quote field names
+        if quote_identifiers:
+            fields_str = self._quote_identifier_list(fields)
+        else:
+            fields_str = ", ".join(fields)
 
         # Generate values for each row
         values_list = []
@@ -381,7 +432,8 @@ class DataRepairer:
     def _build_where_clause(
         self,
         row: Dict[str, Any],
-        key_field: Union[str, List[str]]
+        key_field: Union[str, List[str]],
+        quote_identifiers: bool = True
     ) -> str:
         """
         Build WHERE clause for DELETE/UPDATE.
@@ -389,6 +441,7 @@ class DataRepairer:
         Args:
             row: Row data
             key_field: Key field(s)
+            quote_identifiers: Whether to quote identifiers
 
         Returns:
             WHERE clause string
@@ -398,12 +451,14 @@ class DataRepairer:
             conditions = []
             for field in key_field:
                 value = self._format_value(row[field])
-                conditions.append(f"{field} = {value}")
+                quoted_field = self._quote_identifier(field) if quote_identifiers else field
+                conditions.append(f"{quoted_field} = {value}")
             return " AND ".join(conditions)
         else:
             # Single key
             value = self._format_value(row[key_field])
-            return f"{key_field} = {value}"
+            quoted_field = self._quote_identifier(key_field) if quote_identifiers else key_field
+            return f"{quoted_field} = {value}"
 
     def _format_table_name(
         self,
@@ -431,34 +486,74 @@ class DataRepairer:
         """
         Format a value for SQL.
 
+        Supports:
+            - None → NULL
+            - str → 'escaped string'
+            - bool → TRUE/FALSE
+            - int, float → numeric literal
+            - Decimal → numeric literal
+            - datetime → ISO 8601 timestamp
+            - timedelta → PostgreSQL interval
+            - UUID → UUID literal
+            - bytes, bytearray → bytea hex format
+            - list, dict → JSON
+
         Args:
             value: Value to format
 
         Returns:
             SQL-formatted value string
+
+        Raises:
+            TypeError: If value type is not supported
         """
         if value is None:
             return "NULL"
 
+        # String types
         if isinstance(value, str):
-            # Escape single quotes
             escaped = value.replace("'", "''")
             return f"'{escaped}'"
 
+        # Boolean (must come before int, as bool is subclass of int)
         if isinstance(value, bool):
             return "TRUE" if value else "FALSE"
 
+        # Numeric types
         if isinstance(value, (int, float)):
             return str(value)
 
+        if isinstance(value, Decimal):
+            return str(value)
+
+        # UUID type
+        if isinstance(value, UUID):
+            return f"'{str(value)}'"
+
+        # Datetime types
         if isinstance(value, datetime):
             return f"'{value.isoformat()}'"
 
+        if isinstance(value, timedelta):
+            # Convert to PostgreSQL interval format
+            total_seconds = int(value.total_seconds())
+            return f"INTERVAL '{total_seconds} seconds'"
+
+        # Binary data
+        if isinstance(value, (bytes, bytearray)):
+            # PostgreSQL bytea hex format: '\xDEADBEEF'
+            hex_string = value.hex()
+            return f"'\\x{hex_string}'"
+
+        # Collections (JSON)
         if isinstance(value, (list, dict)):
-            # Convert to JSON string
             json_str = json.dumps(value).replace("'", "''")
             return f"'{json_str}'"
 
-        # Default: convert to string
-        escaped = str(value).replace("'", "''")
-        return f"'{escaped}'"
+        # Unsupported type
+        raise TypeError(
+            f"Unsupported data type for SQL formatting: {type(value).__name__}. "
+            f"Value: {value}. "
+            f"Supported types: None, str, bool, int, float, Decimal, datetime, "
+            f"timedelta, UUID, bytes, bytearray, list, dict"
+        )
