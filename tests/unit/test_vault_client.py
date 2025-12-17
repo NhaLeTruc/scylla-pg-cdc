@@ -199,7 +199,7 @@ class TestVaultClient:
         assert status.error is None
 
         # Test backward compatibility (boolean check)
-        assert status is True
+        assert status  # Can use in if statements
         assert bool(status) is True
 
     def test_health_check_not_authenticated(self, mock_hvac_client):
@@ -220,7 +220,7 @@ class TestVaultClient:
         assert status.error == "Not authenticated"
 
         # Test backward compatibility (boolean check)
-        assert status is False
+        assert not status  # Can use in if not statements
         assert bool(status) is False
 
     def test_health_check_sealed(self, mock_hvac_client):
@@ -241,7 +241,7 @@ class TestVaultClient:
         assert status.error == "Vault is sealed"
 
         # Test backward compatibility (boolean check)
-        assert status is False
+        assert not status  # Can use in if not statements
         assert bool(status) is False
 
     def test_health_check_exception(self, mock_hvac_client):

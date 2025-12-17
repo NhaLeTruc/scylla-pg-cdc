@@ -47,7 +47,8 @@ class TestDataRepairer:
         assert len(actions) == 2
         assert all(action["action_type"] == "INSERT" for action in actions)
         assert all(action["table"] == "cdc_data.users" for action in actions)
-        assert "INSERT INTO cdc_data.users" in actions[0]["sql"]
+        # Updated to check for quoted identifiers (Bug #1 fix)
+        assert 'INSERT INTO "cdc_data"."users"' in actions[0]["sql"]
 
     def test_generate_delete_actions(self, repairer, sample_discrepancies):
         """Test generating DELETE actions for extra rows."""
@@ -61,7 +62,8 @@ class TestDataRepairer:
         assert len(actions) == 1
         assert actions[0]["action_type"] == "DELETE"
         assert actions[0]["table"] == "cdc_data.users"
-        assert "DELETE FROM cdc_data.users WHERE user_id" in actions[0]["sql"]
+        # Updated to check for quoted identifiers (Bug #1 fix)
+        assert 'DELETE FROM "cdc_data"."users" WHERE "user_id"' in actions[0]["sql"]
 
     def test_generate_update_actions(self, repairer, sample_discrepancies):
         """Test generating UPDATE actions for mismatched rows."""
@@ -75,8 +77,9 @@ class TestDataRepairer:
         assert len(actions) == 1
         assert actions[0]["action_type"] == "UPDATE"
         assert actions[0]["table"] == "cdc_data.users"
-        assert "UPDATE cdc_data.users SET" in actions[0]["sql"]
-        assert "WHERE user_id" in actions[0]["sql"]
+        # Updated to check for quoted identifiers (Bug #1 fix)
+        assert 'UPDATE "cdc_data"."users" SET' in actions[0]["sql"]
+        assert 'WHERE "user_id"' in actions[0]["sql"]
 
     def test_generate_all_repair_actions(self, repairer, sample_discrepancies):
         """Test generating all types of repair actions."""
