@@ -1,0 +1,55 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║              MAKEFILE QUICK REFERENCE - CDC Pipeline                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📦 QUICK START
+  make setup                    Full environment setup
+  make deploy-connectors        Deploy CDC connectors
+  make test-replication         Test CDC pipeline (INSERT/UPDATE/DELETE)
+  make help                     Show all commands
+
+🧪 TESTING (with automatic fresh-start)
+  make test                     All tests
+  make test-contract            Contract tests only
+  make test-unit                Unit tests only
+  make test-integration         Integration tests only
+
+🔄 CLEANUP (Three modes!)
+  make cleanup                  Standard (truncate + restart)
+  make cleanup-full             ⭐ FRESH-START (resets everything)
+  make cleanup-connectors       Quick (connectors only)
+
+🔍 MONITORING
+  make health                   Check all services
+  make monitor                  Monitor CDC connectors
+  make check-replication        Verify CDC completeness
+  make logs-kafka-connect       Tail connector logs
+
+💾 DATABASE
+  make shell-scylla             Open ScyllaDB shell
+  make shell-postgres           Open PostgreSQL shell
+  make count-postgres           Show row counts
+  make query-postgres-users     Quick user query
+
+⚙️  DEVELOPMENT
+  make install-deps             Install Python dependencies
+  make fmt                      Format code
+  make lint                     Lint code
+
+📊 INFO
+  make ps                       Show Docker containers
+  make services                 Show service URLs
+  make status                   Complete status
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║  KEY FEATURE: All test commands use --full cleanup for fresh-start!     ║
+║  This solves the Kafka consumer offset stuck issue automatically!       ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Common Workflows:
+  1. First setup:      make setup && make deploy-connectors
+  2. Test pipeline:    make test-replication
+  3. Run tests:        make test-contract
+  4. Debug issues:     make cleanup-full && make logs-kafka-connect
+  5. Daily work:       make cleanup && make test-unit
+

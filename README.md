@@ -230,6 +230,23 @@ docker-compose logs -f kafka-connect
 ./scripts/reconcile.py status
 ```
 
+## Three Cleanup Modes:
+
+1. **Standard Mode (default)**: ```./scripts/cleanup-test-env.sh```
+- Truncates all data in Scylla and Postgres
+- Restarts both connectors
+- Preserves Kafka consumer offsets
+2. **Full Fresh-Start 🆕**: ```./scripts/cleanup-test-env.sh --full```
+- Truncates all data
+- Deletes and recreates connectors
+- Resets Kafka consumer offsets to earliest
+- Forces complete reprocessing from beginning
+- Solves the stuck consumer offset issue you encountered
+3. **Connector-Only 🆕**: ```./scripts/cleanup-test-env.sh --keep-data```
+- Preserves all data
+- Only restarts connectors
+- Quick fix for stuck connectors
+
 ## Documentation
 
 - [Quickstart Guide](specs/001-scylla-pg-cdc/quickstart.md) - Detailed setup and usage
