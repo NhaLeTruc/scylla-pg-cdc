@@ -220,6 +220,120 @@ class TestRowComparer:
         # Order matters for lists
         assert comparer.compare_rows(scylla_row, postgres_row) is False
 
+    def test_datetime_without_timezone(self, comparer):
+        """Test datetime comparison when one has no timezone."""
+        from datetime import datetime, timezone
+
+        # Create datetime without timezone
+        dt_naive = datetime(2024, 1, 15, 10, 30, 0)
+        # Create datetime with timezone
+        dt_aware = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+        scylla_row = {
+            "user_id": "123",
+            "created_at": dt_naive
+        }
+        postgres_row = {
+            "user_id": "123",
+            "created_at": dt_aware
+        }
+
+        # Should match after normalization (naive assumed UTC)
+        assert comparer.compare_rows(scylla_row, postgres_row) is True
+
+    def test_nested_dict_comparison(self, comparer):
+        """Test comparison of nested dictionary values."""
+        scylla_row = {
+            "user_id": "123",
+            "metadata": {"key1": "value1", "key2": "value2"}
+        }
+        postgres_row = {
+            "user_id": "123",
+            "metadata": {"key1": "value1", "key2": "value2"}
+        }
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is True
+
+    def test_nested_dict_different_keys(self, comparer):
+        """Test comparison of nested dicts with different keys."""
+        scylla_row = {
+            "user_id": "123",
+            "metadata": {"key1": "value1"}
+        }
+        postgres_row = {
+            "user_id": "123",
+            "metadata": {"key2": "value2"}
+        }
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is False
+
+    def test_uuid_string_to_uuid_comparison(self, comparer):
+        """Test UUID string compared to UUID object."""
+        from uuid import UUID
+
+        scylla_row = {
+            "user_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+        postgres_row = {
+            "user_id": UUID("123e4567-e89b-12d3-a456-426614174000")
+        }
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is True
+
+    def test_uuid_to_string_comparison(self, comparer):
+        """Test UUID object compared to string."""
+        from uuid import UUID
+
+        scylla_row = {
+            "user_id": UUID("123e4567-e89b-12d3-a456-426614174000")
+        }
+        postgres_row = {
+            "user_id": "123e4567-e89b-12d3-a456-426614174000"
+        }
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is True
+
+    def test_uuid_to_uuid_comparison(self, comparer):
+        """Test UUID object compared to UUID object."""
+        from uuid import UUID
+
+        uuid_val1 = UUID("123e4567-e89b-12d3-a456-426614174000")
+        uuid_val2 = UUID("123e4567-e89b-12d3-a456-426614174000")
+
+        scylla_row = {"user_id": uuid_val1}
+        postgres_row = {"user_id": uuid_val2}
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is True
+
+    def test_list_different_length(self, comparer):
+        """Test comparison of lists with different lengths."""
+        scylla_row = {
+            "user_id": "123",
+            "tags": ["tag1", "tag2"]
+        }
+        postgres_row = {
+            "user_id": "123",
+            "tags": ["tag1", "tag2", "tag3"]
+        }
+
+        assert comparer.compare_rows(scylla_row, postgres_row) is False
+
+    def test_compare_with_ignore_fields(self, comparer):
+        """Test comparison with ignore_fields parameter."""
+        scylla_row = {
+            "user_id": "123",
+            "username": "testuser",
+            "updated_at": "2024-01-01"
+        }
+        postgres_row = {
+            "user_id": "123",
+            "username": "testuser",
+            "updated_at": "2024-01-02"
+        }
+
+        # Should be equal when ignoring updated_at
+        assert comparer.compare_rows(scylla_row, postgres_row, ignore_fields=["updated_at"]) is True
+
     def test_get_differing_fields(self, comparer):
         """Test getting list of fields that differ."""
         scylla_row = {

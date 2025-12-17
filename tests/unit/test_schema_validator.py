@@ -100,6 +100,17 @@ class TestSchemaValidation:
         with pytest.raises(SchemaValidationError, match="must have a 'type'"):
             validator.validate_avro_schema(schema)
 
+    def test_validate_avro_schema_field_not_dict(self, validator):
+        """Test that non-dictionary field raises error."""
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": ["not a dict"]
+        }
+
+        with pytest.raises(SchemaValidationError, match="Field must be a dictionary"):
+            validator.validate_avro_schema(schema)
+
 
 class TestBackwardCompatibility:
     """Test backward compatibility checking."""
@@ -245,6 +256,31 @@ class TestForwardCompatibility:
 
         # Forward compatibility check is reverse of backward
         with pytest.raises(SchemaCompatibilityError):
+            validator.check_forward_compatibility(new_schema, old_schema)
+
+    def test_forward_incompatible_schema_type_change(self, validator):
+        """Test that changing schema type is incompatible in forward compatibility."""
+        old_schema = {"type": "record", "name": "User", "fields": []}
+        new_schema = {"type": "enum", "name": "User", "symbols": []}
+
+        with pytest.raises(SchemaCompatibilityError, match="Schema type changed"):
+            validator.check_forward_compatibility(new_schema, old_schema)
+
+    def test_forward_incompatible_field_type_change(self, validator):
+        """Test that field type change is incompatible in forward compatibility."""
+        old_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        new_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "int"}]
+        }
+
+        with pytest.raises(SchemaCompatibilityError, match="type changed incompatibly"):
             validator.check_forward_compatibility(new_schema, old_schema)
 
 
@@ -432,6 +468,59 @@ class TestCompatibilityModes:
             schema, schema, mode=CompatibilityMode.NONE
         ) is True
 
+    def test_check_compatibility_forward_mode(self):
+        """Test check_compatibility with FORWARD mode."""
+        validator = SchemaValidator(CompatibilityMode.FORWARD)
+
+        old_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [
+                {"name": "id", "type": "string"},
+                {"name": "email", "type": "string", "default": ""}
+            ]
+        }
+
+        new_schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        # Forward compatibility: removing field with default should fail
+        with pytest.raises(SchemaCompatibilityError):
+            validator.check_compatibility(new_schema, old_schema)
+
+    def test_check_compatibility_full_mode(self):
+        """Test check_compatibility with FULL mode."""
+        validator = SchemaValidator(CompatibilityMode.FULL)
+
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        # Same schema should be fully compatible
+        assert validator.check_compatibility(schema, schema) is True
+
+    def test_check_compatibility_invalid_mode(self):
+        """Test that invalid compatibility mode raises ValueError."""
+        validator = SchemaValidator(CompatibilityMode.BACKWARD)
+
+        schema = {
+            "type": "record",
+            "name": "User",
+            "fields": [{"name": "id", "type": "string"}]
+        }
+
+        # Create a fake invalid mode
+        class InvalidMode:
+            value = "INVALID"
+
+        with pytest.raises(ValueError, match="Unknown compatibility mode"):
+            validator.check_compatibility(schema, schema, mode=InvalidMode())
+
 
 class TestSchemaRegistryIntegration:
     """Test Schema Registry integration functionality."""
@@ -440,6 +529,14 @@ class TestSchemaRegistryIntegration:
     def validator(self):
         """Create a SchemaValidator instance."""
         return SchemaValidator()
+
+    @pytest.fixture
+    def validator_with_registry_url(self, mocker):
+        """Create a SchemaValidator instance with schema registry URL."""
+        # Mock requests.Session to prevent actual HTTP calls
+        mock_session = mocker.Mock()
+        mocker.patch('requests.Session', return_value=mock_session)
+        return SchemaValidator(schema_registry_url="http://localhost:8081")
 
     @pytest.fixture
     def mock_registry_client(self, mocker):
@@ -640,6 +737,266 @@ class TestSchemaRegistryIntegration:
 
         assert result is True
         mock_registry_client.set_compatibility.assert_called_once_with("user-topic-value", "FULL")
+
+    def test_simple_registry_client_initialization(self, validator_with_registry_url):
+        """Test that SimpleSchemaRegistryClient is initialized with registry URL."""
+        assert validator_with_registry_url.schema_registry_client is not None
+        assert validator_with_registry_url.schema_registry_url == "http://localhost:8081"
+
+    def test_simple_registry_client_get_schema_by_id(self, mocker):
+        """Test SimpleSchemaRegistryClient.get_schema_by_id method."""
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"schema": {"type": "record", "name": "Test", "fields": []}}
+        mock_session = mocker.Mock()
+        mock_session.get.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        result = validator.schema_registry_client.get_schema_by_id(42)
+
+        assert result == {"type": "record", "name": "Test", "fields": []}
+        mock_session.get.assert_called_once_with("http://localhost:8081/schemas/ids/42")
+
+    def test_simple_registry_client_get_latest_schema_version(self, mocker):
+        """Test SimpleSchemaRegistryClient.get_latest_schema_version method."""
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"version": 5, "schema": json.dumps(schema)}
+        mock_session = mocker.Mock()
+        mock_session.get.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        version, result = validator.schema_registry_client.get_latest_schema_version("test-subject")
+
+        assert version == 5
+        assert result == schema
+        mock_session.get.assert_called_once_with("http://localhost:8081/subjects/test-subject/versions/latest")
+
+    def test_simple_registry_client_get_all_versions(self, mocker):
+        """Test SimpleSchemaRegistryClient.get_all_versions method."""
+        schema1 = {"type": "record", "name": "Test", "fields": []}
+        schema2 = {"type": "record", "name": "Test", "fields": [{"name": "id", "type": "string"}]}
+
+        mock_versions_response = mocker.Mock()
+        mock_versions_response.json.return_value = [1, 2]
+
+        mock_v1_response = mocker.Mock()
+        mock_v1_response.json.return_value = {"version": 1, "schema": json.dumps(schema1)}
+
+        mock_v2_response = mocker.Mock()
+        mock_v2_response.json.return_value = {"version": 2, "schema": json.dumps(schema2)}
+
+        mock_session = mocker.Mock()
+        mock_session.get.side_effect = [mock_versions_response, mock_v1_response, mock_v2_response]
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        results = validator.schema_registry_client.get_all_versions("test-subject")
+
+        assert len(results) == 2
+        assert results[0] == (1, schema1)
+        assert results[1] == (2, schema2)
+
+    def test_simple_registry_client_register_schema(self, mocker):
+        """Test SimpleSchemaRegistryClient.register_schema method."""
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"id": 123}
+        mock_session = mocker.Mock()
+        mock_session.post.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        schema_id = validator.schema_registry_client.register_schema("test-subject", schema)
+
+        assert schema_id == 123
+        mock_session.post.assert_called_once()
+
+    def test_simple_registry_client_test_compatibility(self, mocker):
+        """Test SimpleSchemaRegistryClient.test_compatibility method."""
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"is_compatible": True}
+        mock_session = mocker.Mock()
+        mock_session.post.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        result = validator.schema_registry_client.test_compatibility("test-subject", schema)
+
+        assert result is True
+        mock_session.post.assert_called_once()
+
+    def test_simple_registry_client_get_schema_by_version(self, mocker):
+        """Test SimpleSchemaRegistryClient.get_schema_by_version method."""
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"schema": json.dumps(schema)}
+        mock_session = mocker.Mock()
+        mock_session.get.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        result = validator.schema_registry_client.get_schema_by_version("test-subject", 3)
+
+        assert result == schema
+        mock_session.get.assert_called_once_with("http://localhost:8081/subjects/test-subject/versions/3")
+
+    def test_simple_registry_client_list_subjects(self, mocker):
+        """Test SimpleSchemaRegistryClient.list_subjects method."""
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = ["subject1", "subject2", "subject3"]
+        mock_session = mocker.Mock()
+        mock_session.get.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        subjects = validator.schema_registry_client.list_subjects()
+
+        assert subjects == ["subject1", "subject2", "subject3"]
+        mock_session.get.assert_called_once_with("http://localhost:8081/subjects")
+
+    def test_simple_registry_client_delete_schema_version(self, mocker):
+        """Test SimpleSchemaRegistryClient.delete_schema_version method."""
+        mock_response = mocker.Mock()
+        mock_session = mocker.Mock()
+        mock_session.delete.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        result = validator.schema_registry_client.delete_schema_version("test-subject", 2)
+
+        assert result is True
+        mock_session.delete.assert_called_once_with("http://localhost:8081/subjects/test-subject/versions/2")
+
+    def test_simple_registry_client_get_compatibility(self, mocker):
+        """Test SimpleSchemaRegistryClient.get_compatibility method."""
+        mock_response = mocker.Mock()
+        mock_response.json.return_value = {"compatibilityLevel": "FULL"}
+        mock_session = mocker.Mock()
+        mock_session.get.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        level = validator.schema_registry_client.get_compatibility("test-subject")
+
+        assert level == "FULL"
+        mock_session.get.assert_called_once_with("http://localhost:8081/config/test-subject")
+
+    def test_simple_registry_client_set_compatibility(self, mocker):
+        """Test SimpleSchemaRegistryClient.set_compatibility method."""
+        mock_response = mocker.Mock()
+        mock_session = mocker.Mock()
+        mock_session.put.return_value = mock_response
+        mocker.patch('requests.Session', return_value=mock_session)
+
+        validator = SchemaValidator(schema_registry_url="http://localhost:8081")
+        result = validator.schema_registry_client.set_compatibility("test-subject", "BACKWARD")
+
+        assert result is True
+        mock_session.put.assert_called_once_with("http://localhost:8081/config/test-subject", json={"compatibility": "BACKWARD"})
+
+    def test_get_latest_schema_version_error(self, validator, mock_registry_client):
+        """Test error handling when getting latest schema version fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.get_latest_schema_version.side_effect = Exception("Connection failed")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to get latest schema"):
+            validator.get_latest_schema_version("test-subject")
+
+    def test_get_all_schema_versions_error(self, validator, mock_registry_client):
+        """Test error handling when getting all versions fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.get_all_versions.side_effect = Exception("Network error")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to get versions"):
+            validator.get_all_schema_versions("test-subject")
+
+    def test_register_schema_error(self, validator, mock_registry_client):
+        """Test error handling when registering schema fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_registry_client.register_schema.side_effect = Exception("Registration failed")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to register schema"):
+            validator.register_schema("test-subject", schema)
+
+    def test_test_compatibility_with_registry_error(self, validator, mock_registry_client):
+        """Test error handling when compatibility test fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        schema = {"type": "record", "name": "Test", "fields": []}
+        mock_registry_client.test_compatibility.side_effect = Exception("Test failed")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to test compatibility"):
+            validator.test_compatibility_with_registry("test-subject", schema)
+
+    def test_get_schema_diff_error(self, validator, mock_registry_client):
+        """Test error handling when getting schema diff fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.get_schema_by_version.side_effect = Exception("Version not found")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to get schema diff"):
+            validator.get_schema_diff("test-subject", 1, 2)
+
+    def test_list_subjects_error(self, validator, mock_registry_client):
+        """Test error handling when listing subjects fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.list_subjects.side_effect = Exception("Permission denied")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to list subjects"):
+            validator.list_subjects()
+
+    def test_delete_schema_version_error(self, validator, mock_registry_client):
+        """Test error handling when deleting schema version fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.delete_schema_version.side_effect = Exception("Delete failed")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to delete schema version"):
+            validator.delete_schema_version("test-subject", 1)
+
+    def test_get_registry_compatibility_mode_error(self, validator, mock_registry_client):
+        """Test error handling when getting compatibility mode fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.get_compatibility.side_effect = Exception("Config error")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to get compatibility mode"):
+            validator.get_registry_compatibility_mode("test-subject")
+
+    def test_set_registry_compatibility_mode_error(self, validator, mock_registry_client):
+        """Test error handling when setting compatibility mode fails."""
+        from src.utils.schema_validator import SchemaRegistryError
+
+        mock_registry_client.set_compatibility.side_effect = Exception("Update failed")
+
+        validator.schema_registry_client = mock_registry_client
+
+        with pytest.raises(SchemaRegistryError, match="Failed to set compatibility mode"):
+            validator.set_registry_compatibility_mode("test-subject", CompatibilityMode.FULL)
 
 
 class TestNamespaceValidation:

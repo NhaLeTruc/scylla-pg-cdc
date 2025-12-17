@@ -270,3 +270,39 @@ class TestMessageCorrelation:
         """Test that attaching to non-dict raises ValueError."""
         with pytest.raises(ValueError, match="must be a dictionary"):
             attach_correlation_id_to_message("not a dict")
+
+    def test_correlation_id_filter_when_no_id(self):
+        """Test correlation_id_filter when no correlation ID is set."""
+        from src.utils.correlation import correlation_id_filter
+        import logging
+
+        clear_correlation_id()
+
+        # Create a mock record
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None
+        )
+
+        # Should set to "N/A" when no correlation ID exists
+        result = correlation_id_filter(record)
+        assert result is True
+        assert record.correlation_id == "N/A"
+
+    def test_setup_correlation_logging(self):
+        """Test setup_correlation_logging adds filter to logger."""
+        from src.utils.correlation import setup_correlation_logging
+        import logging
+
+        logger = logging.getLogger("test_logger")
+        initial_filter_count = len(logger.filters)
+
+        setup_correlation_logging(logger)
+
+        # Should add one filter
+        assert len(logger.filters) == initial_filter_count + 1

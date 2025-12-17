@@ -300,3 +300,51 @@ class TestVaultClient:
 
         client.close()
         assert client.client is None
+
+    def test_get_secret_retrieval_error(self, mock_hvac_client):
+        """Test handling of generic errors during secret retrieval."""
+        from hvac.exceptions import VaultError
+
+        mock_client = mock_hvac_client.return_value
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("Connection error")
+
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        with pytest.raises(VaultError, match="Secret retrieval failed"):
+            client.get_secret("test-credentials")
+
+    def test_get_database_credentials_error(self, mock_hvac_client):
+        """Test error handling in get_database_credentials."""
+        from hvac.exceptions import VaultError
+
+        mock_client = mock_hvac_client.return_value
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("Network error")
+
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        with pytest.raises(VaultError):
+            client.get_database_credentials("scylla")
+
+    def test_get_kafka_credentials_error(self, mock_hvac_client):
+        """Test error handling in get_kafka_credentials."""
+        from hvac.exceptions import VaultError
+
+        mock_client = mock_hvac_client.return_value
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("Timeout")
+
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        with pytest.raises(VaultError):
+            client.get_kafka_credentials()
+
+    def test_list_secrets_error(self, mock_hvac_client):
+        """Test error handling in list_secrets."""
+        from hvac.exceptions import VaultError
+
+        mock_client = mock_hvac_client.return_value
+        mock_client.secrets.kv.v2.list_secrets.side_effect = Exception("Permission denied")
+
+        client = VaultClient(vault_url="http://test:8200", vault_token="test-token")
+
+        with pytest.raises(VaultError, match="Secret listing failed"):
+            client.list_secrets()

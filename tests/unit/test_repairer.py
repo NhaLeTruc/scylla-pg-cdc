@@ -492,3 +492,70 @@ class TestDataRepairer:
         )
 
         assert "INTERVAL '2700 seconds'" in result["sql"]
+
+    def test_generate_batch_insert_empty_rows_error(self, repairer):
+        """Test that batch insert with empty rows raises ValueError."""
+        with pytest.raises(ValueError, match="Cannot generate batch insert for empty rows"):
+            repairer._generate_batch_insert_sql(
+                rows=[],
+                table_name="users",
+                schema="cdc_data"
+            )
+
+    def test_generate_insert_actions_with_batch_size(self, repairer):
+        """Test generating batch INSERT actions."""
+        missing_rows = [
+            {"user_id": "001", "username": "user1", "email": "user1@example.com"},
+            {"user_id": "002", "username": "user2", "email": "user2@example.com"},
+            {"user_id": "003", "username": "user3", "email": "user3@example.com"},
+        ]
+
+        actions = repairer.generate_insert_actions(
+            missing_rows,
+            table_name="users",
+            schema="cdc_data",
+            batch_size=2
+        )
+
+        # Should create 2 batch actions (2+1)
+        assert len(actions) == 2
+        assert actions[0]["batch_size"] == 2
+        assert actions[1]["batch_size"] == 1
+
+    def test_generate_update_with_composite_key(self, repairer):
+        """Test UPDATE generation with composite key."""
+        mismatch = {
+            "scylla": {"region": "US", "user_id": "123", "status": "active"},
+            "postgres": {"region": "US", "user_id": "123", "status": "inactive"}
+        }
+
+        result = repairer.generate_update_sql(
+            mismatch=mismatch,
+            table_name="users",
+            schema="cdc_data",
+            key_field=["region", "user_id"]
+        )
+
+        # Should have composite WHERE clause
+        assert '"region"' in result["sql"]
+        assert '"user_id"' in result["sql"]
+        assert "AND" in result["sql"]
+
+    def test_generate_update_with_no_differing_fields(self, repairer):
+        """Test UPDATE when no specific differing fields detected."""
+        # Create mismatch where values appear equal but should still update non-key fields
+        mismatch = {
+            "scylla": {"user_id": "123", "username": "test", "email": "test@example.com"},
+            "postgres": {"user_id": "123", "username": "test", "email": "test@example.com"}
+        }
+
+        result = repairer.generate_update_sql(
+            mismatch=mismatch,
+            table_name="users",
+            schema="cdc_data",
+            key_field="user_id"
+        )
+
+        # Should update all non-key fields when no diff detected
+        assert "UPDATE" in result["sql"]
+        assert '"username"' in result["sql"] or '"email"' in result["sql"]
