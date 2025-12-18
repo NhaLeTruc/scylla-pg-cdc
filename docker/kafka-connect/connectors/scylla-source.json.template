@@ -26,8 +26,8 @@
     "snapshot.mode": "initial",
     "snapshot.consistency.mode": "all_tables",
 
-    "poll.interval.ms": 1000,
-    "max.batch.size": 2048,
+    "poll.interval.ms": ${CDC_SOURCE_POLL_INTERVAL_MS},
+    "max.batch.size": ${CDC_SOURCE_MAX_BATCH_SIZE},
     "max.queue.size": 8192,
 
     "schema.history.internal.kafka.topic": "${CDC_SCHEMA_HISTORY_TOPIC}",
@@ -40,7 +40,7 @@
     "errors.deadletterqueue.topic.replication.factor": ${KAFKA_REPLICATION_FACTOR},
     "errors.deadletterqueue.context.headers.enable": true,
 
-    "heartbeat.interval.ms": 30000,
+    "heartbeat.interval.ms": ${CDC_SOURCE_HEARTBEAT_INTERVAL_MS},
     "heartbeat.topics.prefix": "${CDC_HEARTBEAT_TOPIC_PREFIX}",
 
     "producer.override.compression.type": "snappy",

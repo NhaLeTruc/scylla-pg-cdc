@@ -26,8 +26,8 @@
     "snapshot.mode": "initial",
     "snapshot.consistency.mode": "all_tables",
 
-    "poll.interval.ms": 1000,
-    "max.batch.size": 2048,
+    "poll.interval.ms": 100,
+    "max.batch.size": 1,
     "max.queue.size": 8192,
 
     "schema.history.internal.kafka.topic": "scylla-schema-history",
@@ -40,7 +40,7 @@
     "errors.deadletterqueue.topic.replication.factor": 1,
     "errors.deadletterqueue.context.headers.enable": true,
 
-    "heartbeat.interval.ms": 30000,
+    "heartbeat.interval.ms": 1000,
     "heartbeat.topics.prefix": "heartbeat.scylla",
 
     "producer.override.compression.type": "snappy",

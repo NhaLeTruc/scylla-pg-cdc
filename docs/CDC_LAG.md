@@ -396,35 +396,89 @@ ALTER SYSTEM SET synchronous_commit = 'off';  -- Trades durability for speed
 
 ---
 
+## Quick Configuration Guide
+
+### Using Environment Variables
+
+The CDC latency parameters are now configurable via the `.env` file. Simply edit the values and redeploy connectors.
+
+#### Phase 1 Configuration (10-15s latency) - Recommended ⭐
+
+Edit your `.env` file:
+```bash
+# CDC Latency Tuning
+CDC_SOURCE_HEARTBEAT_INTERVAL_MS=10000      # Changed from 30000
+SINK_BATCH_SIZE=200                          # Changed from 3000
+SINK_CONSUMER_MAX_POLL_RECORDS=200          # Changed from 1000
+```
+
+Then apply the changes:
+```bash
+make cleanup-connectors  # Stop and remove current connectors
+make deploy-connectors   # Deploy with new configuration
+make test-replication    # Verify replication works (should pass in ~20s)
+```
+
+**Expected Result:** 10-15 second latency, suitable for most production workloads.
+
+---
+
+#### Streaming Mode Configuration (1-5s latency) - Advanced
+
+For ultra-low latency (use only if required):
+```bash
+# CDC Latency Tuning - Streaming Mode
+CDC_SOURCE_HEARTBEAT_INTERVAL_MS=1000
+CDC_SOURCE_POLL_INTERVAL_MS=100
+CDC_SOURCE_MAX_BATCH_SIZE=1
+SINK_BATCH_SIZE=1
+SINK_CONSUMER_MAX_POLL_RECORDS=1
+```
+
+⚠️ **Warning:** This significantly increases database write operations and resource usage. Only use for latency-critical tables.
+
+---
+
+#### Available Configuration Parameters
+
+All CDC latency parameters in `.env`:
+
+| Parameter | Default | Low-Latency | Ultra-Low | Description |
+|-----------|---------|-------------|-----------|-------------|
+| `CDC_SOURCE_HEARTBEAT_INTERVAL_MS` | 30000 | 10000 | 1000 | Source heartbeat interval (ms) |
+| `CDC_SOURCE_POLL_INTERVAL_MS` | 1000 | 500 | 100 | Source polling frequency (ms) |
+| `CDC_SOURCE_MAX_BATCH_SIZE` | 2048 | 1024 | 1 | Max records per source batch |
+| `SINK_BATCH_SIZE` | 3000 | 200 | 1 | Sink batch size before write |
+| `SINK_CONSUMER_MAX_POLL_RECORDS` | 1000 | 200 | 1 | Max records per consumer poll |
+
+---
+
 ## Recommended Implementation Plan
 
 ### Phase 1: Quick Win (Immediate - 1 Hour) ⭐
 
 **Goal:** Achieve 10-15 second latency with minimal risk
 
-**Changes:**
-```json
-// File: docker/kafka-connect/connectors/postgres-sink.json
-{
-  "batch.size": 200,                              // Changed from 3000
-  "consumer.override.max.poll.records": 200       // Changed from 1000
-}
+**Implementation:**
 
-// File: docker/kafka-connect/connectors/scylla-source.json.template
-{
-  "heartbeat.interval.ms": 10000                  // Changed from 30000
-}
-```
+Now simplified using environment variables! See the [Quick Configuration Guide](#quick-configuration-guide) above.
 
-**Validation Steps:**
-1. Update connector configurations
+**Steps:**
+1. Edit `.env` file with Phase 1 values
 2. Redeploy connectors: `make cleanup-connectors && make deploy-connectors`
 3. Run test: `make test-replication`
-4. Adjust test wait time to 20 seconds in Makefile
-5. Monitor consumer lag for 24 hours
+4. Monitor consumer lag for 24 hours
+
+**Configuration Changes:**
+```bash
+# In .env file:
+CDC_SOURCE_HEARTBEAT_INTERVAL_MS=10000      # Changed from 30000
+SINK_BATCH_SIZE=200                          # Changed from 3000
+SINK_CONSUMER_MAX_POLL_RECORDS=200          # Changed from 1000
+```
 
 **Success Criteria:**
-- ✅ Test passes with 15-second wait time
+- ✅ Test passes with 20-second wait time (down from 60s)
 - ✅ Consumer lag remains < 10 messages
 - ✅ No errors in connector logs
 
